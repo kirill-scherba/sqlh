@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// SqlHelper package contains helper functions to generate SQL statements.
-package sqlh
+// Query is SQL Helper Query package contains helper functions to generate SQL
+// statements query.
+package query
 
 import (
 	"fmt"
@@ -13,6 +14,19 @@ import (
 )
 
 var ErrTypeIsNotStruct = fmt.Errorf("type is not a struct")
+
+// SelectAttr defines attributes for SELECT statement.
+type SelectAttr struct {
+	Paginator *Paginator
+	Wheres    []string
+	OrderBy   string
+}
+
+// Paginator defines attributes for SELECT statement.
+type Paginator struct {
+	Offset int
+	Limit  int
+}
 
 // Table returns a SQL CREATE TABLE statement for the given struct type.
 //
@@ -126,17 +140,6 @@ func Update[T any](wheres ...string) (string, error) {
 		strings.Join(fields, "=?,")+"=?",
 		strings.Join(wheres, "=? AND ")+"=?",
 	), nil
-}
-
-type SelectAttr struct {
-	Paginator *Paginator
-	Wheres    []string
-	OrderBy   string
-}
-
-type Paginator struct {
-	Offset int
-	Limit  int
 }
 
 // Select returns a SQL SELECT statement for the given struct type.
