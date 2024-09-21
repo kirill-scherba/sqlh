@@ -274,7 +274,7 @@ func Args(row any) ([]interface{}, error) {
 		if rowType.Field(i).Tag.Get("db") == "-" {
 			continue
 		}
-	
+
 		arg := rowVal.Field(i).Interface()
 		args = append(args, &arg)
 	}
@@ -300,7 +300,7 @@ func ArgsAppay(row any, args []interface{}) (err error) {
 
 	// Loop through the struct fields
 	for i := 0; i < rowVal.NumField(); i++ {
-		
+
 		// Skip not db fields tagged with "-"
 		if rowType.Field(i).Tag.Get("db") == "-" {
 			continue
