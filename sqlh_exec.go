@@ -7,19 +7,41 @@ import (
 	"gitlab.dev.redpad.games/dustland-server/dadmin/server/sqlh/query"
 )
 
-const numRows = 10 // number of rows to get in select query
+var numRows = 10 // number of rows to get in select query
 
 // UpdateAttr struct contains row and where condition and used in Update
 // function as attrs parameter.
 type UpdateAttr[T any] struct {
-	Row    T       // Row value to be updated
-	Wheres []Where // Where condition
+
+	// Row value to be updated
+	Row T
+
+	// Where condition
+	Wheres []Where
 }
 
 // Where struct contains where condition as field and value.
 type Where struct {
+
+	// Database table field Name and Condition Operator, f.e. "id="
+	// 	=	Equal
+	// 	>	Greater than
+	// 	<	Less than
+	// 	>=	Greater than or equal
+	// 	<=	Less than or equal
+	// 	<>	Not equal. In some versions of SQL it may be written as !=
+	// 	BETWEEN	Between a certain range
+	// 	LIKE	Search for a pattern
+	// 	IN	To specify multiple possible values for a column
 	Field string
+
+	// Field value
 	Value any
+}
+
+// SetNumRows sets numer of rows in List function.
+func SetNumRows(n int) {
+	numRows = n
 }
 
 // Insert inserts rows into T database table.
@@ -37,7 +59,7 @@ func Insert[T any](db *sql.DB, rows ...T) (err error) {
 		return
 	}
 
-	// Create prepared update statement
+	// Create prepared insert statement
 	stmt, err := tx.Prepare(insertStmt)
 	if err != nil {
 		tx.Rollback()
@@ -147,6 +169,49 @@ func Get[T any](db *sql.DB, wheres ...Where) (row T, err error) {
 	return
 }
 
+// Delete deletes rows from T database table.
+func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
+
+	// Where clauses
+	var whereArgs []any
+	var wnereFields []string
+	for _, w := range wheres {
+		whereArgs = append(whereArgs, w.Value)
+		wnereFields = append(wnereFields, w.Field)
+	}
+
+	// Create delete statement
+	deleteStmt, err := query.Delete[T](wnereFields...)
+	if err != nil {
+		return
+	}
+
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		return
+	}
+
+	// Create prepared delete statement
+	stmt, err := db.Prepare(deleteStmt)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+	defer stmt.Close()
+
+	// Delete rows
+	_, err = stmt.Exec(whereArgs...)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	// Commit transaction and return
+	err = tx.Commit()
+	return
+}
+
 // List returns rows from T database table.
 func List[T any](db *sql.DB, previous int, orderBy string, wheres ...Where) (
 	rows []T, pagination int, err error) {
@@ -156,7 +221,7 @@ func List[T any](db *sql.DB, previous int, orderBy string, wheres ...Where) (
 
 	// Where clauses
 	for _, w := range wheres {
-		attr.Wheres = append(attr.Wheres, w.Field+"=?")
+		attr.Wheres = append(attr.Wheres, w.Field+"?")
 		selectArgs = append(selectArgs, w.Value)
 	}
 
@@ -204,7 +269,7 @@ func Count[T any](db *sql.DB, wheres ...Where) (
 
 	// Where clauses
 	for _, w := range wheres {
-		attr.Wheres = append(attr.Wheres, w.Field+"=?")
+		attr.Wheres = append(attr.Wheres, w.Field+"?")
 		selectArgs = append(selectArgs, w.Value)
 	}
 

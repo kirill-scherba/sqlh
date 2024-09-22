@@ -138,7 +138,7 @@ func Update[T any](wheres ...string) (string, error) {
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s;",
 		name[T](),
 		strings.Join(fields, "=?,")+"=?",
-		strings.Join(wheres, "=? AND ")+"=?",
+		strings.Join(wheres, "? AND ")+"?",
 	), nil
 }
 
@@ -242,12 +242,12 @@ func Delete[T any](wheres ...string) (string, error) {
 	// Join the where statements with " and "
 	var where string
 	if len(wheres) > 0 {
-		where = strings.Join(wheres, " and ")
+		where = strings.Join(wheres, "? AND ")
 	}
 
 	// Add the where statement to the SQL query
 	if len(where) > 0 {
-		where = fmt.Sprintf(" where %s", where)
+		where = fmt.Sprintf(" where %s?", where)
 	}
 
 	// Return the complete DELETE statement
