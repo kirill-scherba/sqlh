@@ -215,6 +215,10 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 // List returns rows from T database table.
 func List[T any](db *sql.DB, previous int, orderBy string, wheres ...Where) (
 	rows []T, pagination int, err error) {
+	return ListRows[T](db, previous, orderBy, numRows, wheres...)
+}
+func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wheres ...Where) (
+	rows []T, pagination int, err error) {
 
 	var attr = &query.SelectAttr{}
 	var selectArgs []any
