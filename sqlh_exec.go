@@ -225,6 +225,10 @@ func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wher
 
 	// Where clauses
 	for _, w := range wheres {
+		if w.Value == nil {
+			attr.Wheres = append(attr.Wheres, w.Field)
+			continue
+		}
 		attr.Wheres = append(attr.Wheres, w.Field+"?")
 		selectArgs = append(selectArgs, w.Value)
 	}
@@ -240,6 +244,7 @@ func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wher
 
 	// Create select statement
 	selectStmt, _ := query.Select[T](attr)
+
 	sqlRows, err := db.Query(selectStmt, selectArgs...)
 	if err != nil {
 		return
