@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Sqlh is SQL Helper package contains helper functions to execute SQL
-// requests.
+// Sqlh is a SQL Helper package contains helper functions to execute SQL
+// requests. It provides such functions as Execute, Select, Insert, Update and
+// Delete.
 package sqlh
 
 import (
@@ -50,7 +51,12 @@ func SetNumRows(n int) {
 	numRows = n
 }
 
-// Insert inserts rows into T database table.
+// Insert inserts rows into the T database table.
+//
+// It accepts a variadic number of rows of type T and inserts them into the
+// corresponding database table. The function starts a transaction and prepares
+// an insert statement. Each row is then inserted in a loop. If any error occurs,
+// the transaction is rolled back. Otherwise, the transaction is committed.
 func Insert[T any](db *sql.DB, rows ...T) (err error) {
 
 	// Create insert statement
@@ -75,11 +81,13 @@ func Insert[T any](db *sql.DB, rows ...T) (err error) {
 
 	// Insert rows
 	for _, row := range rows {
+		// Get arguments from the row
 		args, err := query.Args(row)
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
+		// Execute insert statement with arguments
 		_, err = stmt.Exec(args...)
 		if err != nil {
 			tx.Rollback()
@@ -93,6 +101,12 @@ func Insert[T any](db *sql.DB, rows ...T) (err error) {
 }
 
 // Update updates rows in T database table.
+//
+// The function takes a list of UpdateAttr as input parameter.
+// UpdateAttr contains row and where condition.
+// The function executes UPDATE statement for each UpdateAttr in the list.
+//
+// The function returns error if something failed during the update process.
 func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 
 	// Start transaction
@@ -104,6 +118,7 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 	// Update rows
 	for _, attr := range attrs {
 
+		// Create where clause
 		var wheres []string
 		for _, where := range attr.Wheres {
 			wheres = append(wheres, where.Field)
@@ -150,19 +165,30 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 	return
 }
 
-// Get returns row from T database table.
+// Get returns a row from T database table.
+//
+// The function takes a list of Where condition as input parameter.
+// The function executes SELECT statement with the given where conditions.
+// If the row is found, the function returns the row and nil as error.
+// If the row is not found, the function returns a default value for row and
+// an error with message "not found".
+// If multiple rows are found, the function returns a default value for row and
+// an error with message "multiple rows found".
 func Get[T any](db *sql.DB, wheres ...Where) (row T, err error) {
 
+	// Check if the where clause is required
 	if len(wheres) == 0 {
 		err = fmt.Errorf("the where clause is required")
 		return
 	}
 
+	// Get rows from database
 	rows, _, err := List[T](db, 0, "", wheres...)
 	if err != nil {
 		return
 	}
 
+	// Check if the row is found
 	switch len(rows) {
 	case 0:
 		err = fmt.Errorf("not found")
@@ -175,19 +201,25 @@ func Get[T any](db *sql.DB, wheres ...Where) (row T, err error) {
 	return
 }
 
-// Delete deletes rows from T database table.
+// Delete deletes rows from the T database table.
+//
+// The function takes a variadic list of Where conditions to specify which
+// rows to delete. It constructs a DELETE SQL statement with the given
+// conditions, starts a database transaction, prepares the DELETE statement,
+// and executes it. If any error occurs during the process, the transaction
+// is rolled back. Otherwise, the transaction is committed.
 func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 
-	// Where clauses
+	// Prepare where clauses and arguments
 	var whereArgs []any
-	var wnereFields []string
+	var whereFields []string
 	for _, w := range wheres {
 		whereArgs = append(whereArgs, w.Value)
-		wnereFields = append(wnereFields, w.Field)
+		whereFields = append(whereFields, w.Field)
 	}
 
 	// Create delete statement
-	deleteStmt, err := query.Delete[T](wnereFields...)
+	deleteStmt, err := query.Delete[T](whereFields...)
 	if err != nil {
 		return
 	}
@@ -206,7 +238,7 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 	}
 	defer stmt.Close()
 
-	// Delete rows
+	// Execute delete statement with where arguments
 	_, err = stmt.Exec(whereArgs...)
 	if err != nil {
 		tx.Rollback()
@@ -219,8 +251,16 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 }
 
 // List returns rows from T database table.
+//
+// The function takes a list of Where condition as input parameter.
+// The function executes SELECT statement with the given where conditions.
+// If the rows are found, the function returns the rows and nil as error.
+// If the rows are not found, the function returns a default value for rows and
+// an error with message "not found".
 func List[T any](db *sql.DB, previous int, orderBy string, wheres ...Where) (
 	rows []T, pagination int, err error) {
+
+	// Call ListRows function with numRows as number of rows
 	return ListRows[T](db, previous, orderBy, numRows, wheres...)
 }
 func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wheres ...Where) (
@@ -275,28 +315,37 @@ func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wher
 	return
 }
 
-// Count returns number of rows from selected in T table from database.
-func Count[T any](db *sql.DB, wheres ...Where) (
-	count int, err error) {
+// Count returns the number of rows from the selected T table in the database.
+//
+// The function accepts a variadic list of Where conditions to filter the rows.
+// It constructs a SQL COUNT statement and executes it using the provided
+// database connection. The count of rows is returned along with any error
+// encountered during the execution.
+func Count[T any](db *sql.DB, wheres ...Where) (count int, err error) {
 
 	var attr = &query.SelectAttr{}
 	var selectArgs []any
 
-	// Where clauses
+	// Construct where clauses and corresponding arguments
 	for _, w := range wheres {
 		attr.Wheres = append(attr.Wheres, w.Field+"?")
 		selectArgs = append(selectArgs, w.Value)
 	}
 
-	// Create select statement
-	selectStmt, _ := query.Count[T](attr)
+	// Create SQL COUNT statement
+	selectStmt, err := query.Count[T](attr)
+	if err != nil {
+		return
+	}
+
+	// Execute the query
 	sqlRows, err := db.Query(selectStmt, selectArgs...)
 	if err != nil {
 		return
 	}
 	defer sqlRows.Close()
 
-	// Get row count
+	// Retrieve the row count
 	if sqlRows.Next() {
 		err = sqlRows.Scan(&count)
 		if err != nil {

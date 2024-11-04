@@ -5,14 +5,12 @@
 // Query is SQL Helper Query package contains helper functions to generate SQL
 // statements query.
 package query
-
 import (
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 )
-
 var ErrTypeIsNotStruct = fmt.Errorf("type is not a struct")
 
 // SelectAttr defines attributes for SELECT statement.
@@ -117,6 +115,9 @@ func Insert[T any]() (string, error) {
 }
 
 // Update returns a SQL UPDATE statement for the given struct type.
+//
+// The wheres parameter is an optional list of where clauses. If specified, the
+// where clauses will be joined with " and " and added to the SQL statement.
 func Update[T any](wheres ...string) (string, error) {
 
 	// Check if type is struct
