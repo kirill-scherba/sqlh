@@ -1,10 +1,16 @@
+// Copyright 2024 Kirill Scherba <kirill@scherba.ru>. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Sqlh is SQL Helper package contains helper functions to execute SQL
+// requests.
 package sqlh
 
 import (
 	"database/sql"
 	"fmt"
 
-	"gitlab.dev.redpad.games/dustland-server/dadmin/server/sqlh/query"
+	"github.com/kirill-scherba/sqlh/query"
 )
 
 var numRows = 10 // number of rows to get in select query
