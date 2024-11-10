@@ -5,12 +5,14 @@
 // Query is SQL Helper Query package contains helper functions to generate SQL
 // statements query.
 package query
+
 import (
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 )
+
 var ErrTypeIsNotStruct = fmt.Errorf("type is not a struct")
 
 // SelectAttr defines attributes for SELECT statement.
@@ -255,15 +257,21 @@ func Delete[T any](wheres ...string) (string, error) {
 	return fmt.Sprintf("DELETE from %s%s;", name[T](), where), nil
 }
 
-// Args returns the arguments array for the given struct type.
+// Args returns the arguments array for the given struct type. The given struct
+// may be a pointer to struct or struct.
 //
 // It loops through the given struct fields and get field values.
 // Supported types are string, float64, time.Time, int64 and bool.
 // If unsupported type is found, it returns an error.
 func Args(row any) ([]interface{}, error) {
 
+	// Get row value and type from the given row
 	rowVal := reflect.ValueOf(row)
-	rowType := reflect.TypeOf(row)
+	rowType := rowVal.Type()
+	if rowVal.Kind() == reflect.Ptr {
+		rowVal = rowVal.Elem()
+		rowType = rowType.Elem()
+	}
 
 	// Check if row is struct
 	if rowVal.Kind() != reflect.Struct {
@@ -286,7 +294,8 @@ func Args(row any) ([]interface{}, error) {
 	return args, nil
 }
 
-// ArgsAppay sets fields values of the given struct row from the args array.
+// ArgsAppay sets fields values of the given pointer to struct row from the args
+// array.
 //
 // It loops through the given struct fields and sets field values from the
 // corresponding arguments in the given args array.
@@ -296,6 +305,10 @@ func ArgsAppay(row any, args []interface{}) (err error) {
 
 	rowVal := reflect.ValueOf(row).Elem()
 	rowType := reflect.TypeOf(row).Elem()
+	if rowVal.Kind() == reflect.Ptr {
+		rowVal = rowVal.Elem()
+		rowType = rowType.Elem()
+	}
 
 	// Check if the given value is a struct
 	if rowVal.Kind() != reflect.Struct {
@@ -344,25 +357,67 @@ func ArgsAppay(row any, args []interface{}) (err error) {
 	return
 }
 
-// checkType checks type T is struct.
+// checkType checks if the type T is a struct or a pointer to a struct.
+//
+// It takes the type T as an argument and returns an error if the type is not a
+// struct or a pointer to a struct.
 func checkType[T any]() (err error) {
+	// Get the type of the struct
 	t := reflect.TypeOf(new(T)).Elem()
+
+	// If the type is a pointer, get the type of the struct it points to
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// Check if the type is a struct
 	if t.Kind() != reflect.Struct {
+		// Return an error if the type is not a struct
 		err = ErrTypeIsNotStruct
 	}
 	return
 }
 
 // name returns table name from struct name.
+//
+// It takes type T as an argument and returns the table name as a string.
+// The table name is the lower case version of the struct name.
 func name[T any]() string {
-	return strings.ToLower(reflect.TypeOf(new(T)).Elem().Name())
+	// Get the type of the struct
+	t := reflect.TypeOf(new(T)).Elem()
+
+	// If the type is a pointer, get the type of the struct it points to
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// Return the table name as the lower case version of the struct name
+	return strings.ToLower(t.Name())
 }
 
 // fields returns a list of struct field names.
+//
+// It takes type T as an argument and returns a slice of strings.
+// The slice contains the names of the struct fields.
+// The names are determined by the db tag in the struct field.
+// If the db tag is not specified, the field name is used as the
+// table field name.
 func fields[T any]() (fields []string) {
 	t := reflect.TypeOf(new(T)).Elem()
+
+	// If the type is a pointer, get the type of the struct it points to
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// Loop through the struct fields
 	for i := 0; i < t.NumField(); i++ {
-		if fieldName, ok := getFieldName(t.Field(i)); ok {
+		// Get the field
+		field := t.Field(i)
+
+		// If the field name is not empty and the db tag is not set to "-"
+		// add the field name to the slice
+		if fieldName, ok := getFieldName(field); ok {
 			fields = append(fields, fieldName)
 		}
 	}
@@ -370,6 +425,18 @@ func fields[T any]() (fields []string) {
 }
 
 // getFieldName returns a SQL fields name using db tag.
+//
+// It takes a reflect.StructField as an argument and returns a string
+// and a boolean. The string is the name of the SQL field. The boolean
+// indicates if the field name was set successfully.
+//
+// The function first checks if the field has the db tag set.
+// If the tag is set, the function returns the value of the tag as the
+// field name.
+// If the tag is not set, the function returns the name of the field
+// as the field name by calling strings.ToLower on the field name.
+// If the tag is set to "-", the function returns an empty string and
+// false indicating that the field name was not set successfully.
 func getFieldName(field reflect.StructField) (fieldName string, ok bool) {
 	fieldName = field.Tag.Get("db")
 	switch fieldName {
@@ -383,6 +450,18 @@ func getFieldName(field reflect.StructField) (fieldName string, ok bool) {
 }
 
 // getFieldType returns a SQL field type using db_type tag.
+//
+// If the db_type tag is not set, the function tries to infer the type from
+// the Go type of the field. The mapping between Go types and SQL types is
+// as follows:
+//   int, int8, int16, int32, int64: "integer"
+//   uint8: "tinyint"
+//   uint, uint16, uint32, uint64: "bigint"
+//   float32, float64: "double"
+//   bool: "bit"
+//   string: "text"
+//
+// If the type is not supported, the function returns an error.
 func getFieldType(field reflect.StructField) (fieldType string, err error) {
 
 	fieldType = field.Tag.Get("db_type")
@@ -403,7 +482,7 @@ func getFieldType(field reflect.StructField) (fieldType string, err error) {
 			fieldType = "text"
 		default:
 			// If the type is not supported, return an error
-			return "", fmt.Errorf("unsupported type: %s", field.Type.Kind())
+			err = fmt.Errorf("unsupported type: %s", field.Type.Kind())
 		}
 	}
 
