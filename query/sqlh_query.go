@@ -186,8 +186,8 @@ func Select[T any](attr *SelectAttr) (string, error) {
 		// Offset and limit
 		if attr.Paginator != nil {
 			switch {
-			// No limit or offset
-			case !(attr.Paginator.Limit > 0 && attr.Paginator.Offset > 0):
+			// No limit and offset
+			case attr.Paginator.Limit <= 0 && attr.Paginator.Offset <= 0:
 
 			// Limit is set
 			case attr.Paginator.Limit > 0:
