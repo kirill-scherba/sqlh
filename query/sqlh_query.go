@@ -17,15 +17,19 @@ var ErrTypeIsNotStruct = fmt.Errorf("type is not a struct")
 
 // SelectAttr defines attributes for SELECT statement.
 type SelectAttr struct {
-	Paginator *Paginator
-	Wheres    []string
-	OrderBy   string
+	Paginator *Paginator // Offset and limit (optional)
+	Wheres    []string   // Where clauses (optional)
+	OrderBy   string     // Order by (optional)
 }
 
 // Paginator defines attributes for SELECT statement.
 type Paginator struct {
+	// Get list of rows from this position. In other words: skip the specified
+	// number of rows before starting to output rows.
 	Offset int
-	Limit  int
+
+	// Number of rows to get. If 0, all rows will be returned.
+	Limit int
 }
 
 // Table returns a SQL CREATE TABLE statement for the given struct type.
@@ -181,7 +185,19 @@ func Select[T any](attr *SelectAttr) (string, error) {
 
 		// Offset and limit
 		if attr.Paginator != nil {
-			limit = fmt.Sprintf(" LIMIT %d, %d", attr.Paginator.Offset, attr.Paginator.Limit)
+			switch {
+			// No limit or offset
+			case !(attr.Paginator.Limit > 0 && attr.Paginator.Offset > 0):
+
+			// Limit is set
+			case attr.Paginator.Limit > 0:
+				limit = fmt.Sprintf(" LIMIT %d, %d", attr.Paginator.Offset,
+					attr.Paginator.Limit)
+
+			// Limit is not set - get all rows
+			default:
+				limit = fmt.Sprintf(" LIMIT %d, ~0", attr.Paginator.Offset)
+			}
 		}
 	}
 
@@ -454,12 +470,13 @@ func getFieldName(field reflect.StructField) (fieldName string, ok bool) {
 // If the db_type tag is not set, the function tries to infer the type from
 // the Go type of the field. The mapping between Go types and SQL types is
 // as follows:
-//   int, int8, int16, int32, int64: "integer"
-//   uint8: "tinyint"
-//   uint, uint16, uint32, uint64: "bigint"
-//   float32, float64: "double"
-//   bool: "bit"
-//   string: "text"
+//
+//	int, int8, int16, int32, int64: "integer"
+//	uint8: "tinyint"
+//	uint, uint16, uint32, uint64: "bigint"
+//	float32, float64: "double"
+//	bool: "bit"
+//	string: "text"
 //
 // If the type is not supported, the function returns an error.
 func getFieldType(field reflect.StructField) (fieldType string, err error) {
