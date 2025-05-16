@@ -63,7 +63,7 @@ func Table[T any]() (string, error) {
 	t := reflect.TypeOf(new(T)).Elem()
 
 	var dbFields []string
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 
 		field := t.Field(i)
 
@@ -79,9 +79,18 @@ func Table[T any]() (string, error) {
 			return "", err
 		}
 
-		dbFields = append(dbFields,
+		// Use db_key text only if field name is "_"
+		if fieldName == "_" {
+			dbFields = append(
+				dbFields,
+				strings.TrimRight(field.Tag.Get("db_key"), " "),
+			)
+			continue
+		}
+
+		dbFields = append(
+			dbFields,
 			strings.TrimRight(
-				// Remove trailing spaces from the string
 				fmt.Sprintf("%s %s %s", strings.ToLower(fieldName), fieldType,
 					field.Tag.Get("db_key")),
 				" ",
@@ -90,10 +99,12 @@ func Table[T any]() (string, error) {
 	}
 
 	// Return CREATE TABLE statement
-	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);",
+	q := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);",
 		name[T](),
 		strings.Join(dbFields, ", "),
-	), nil
+	)
+
+	return q, nil
 }
 
 // Insert returns a SQL INSERT statement for the given struct type.
@@ -191,12 +202,12 @@ func Select[T any](attr *SelectAttr) (string, error) {
 
 			// Limit is set
 			case attr.Paginator.Limit > 0:
-				limit = fmt.Sprintf(" LIMIT %d, %d", attr.Paginator.Offset,
-					attr.Paginator.Limit)
+				limit = fmt.Sprintf(" LIMIT %d OFFSET %d",
+					attr.Paginator.Limit, attr.Paginator.Offset)
 
 			// Limit is not set - get all rows
 			default:
-				limit = fmt.Sprintf(" LIMIT %d, ~0", attr.Paginator.Offset)
+				limit = fmt.Sprintf(" OFFSET %d", attr.Paginator.Offset)
 			}
 		}
 	}
@@ -279,7 +290,7 @@ func Delete[T any](wheres ...string) (string, error) {
 // It loops through the given struct fields and get field values.
 // Supported types are string, float64, time.Time, int64 and bool.
 // If unsupported type is found, it returns an error.
-func Args(row any) ([]interface{}, error) {
+func Args(row any) ([]any, error) {
 
 	// Get row value and type from the given row
 	rowVal := reflect.ValueOf(row)
@@ -295,8 +306,8 @@ func Args(row any) ([]interface{}, error) {
 	}
 
 	// Make arguments array for the given struct
-	args := make([]interface{}, 0, rowVal.NumField())
-	for i := 0; i < rowVal.NumField(); i++ {
+	args := make([]any, 0, rowVal.NumField())
+	for i := range rowVal.NumField() {
 
 		// Skip not db fields tagged with "-"
 		if rowType.Field(i).Tag.Get("db") == "-" {
@@ -317,7 +328,7 @@ func Args(row any) ([]interface{}, error) {
 // corresponding arguments in the given args array.
 // Supported types are string, float64, time.Time, int64 and bool.
 // If unsupported type is found, it returns an error.
-func ArgsAppay(row any, args []interface{}) (err error) {
+func ArgsAppay(row any, args []any) (err error) {
 
 	rowVal := reflect.ValueOf(row).Elem()
 	rowType := reflect.TypeOf(row).Elem()
