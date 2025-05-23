@@ -291,6 +291,7 @@ func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wher
 	// Create select statement
 	selectStmt, _ := query.Select[T](attr)
 
+	// Execute select statement
 	sqlRows, err := db.Query(selectStmt, selectArgs...)
 	if err != nil {
 		return
@@ -304,7 +305,12 @@ func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wher
 		if err = sqlRows.Scan(args...); err != nil {
 			return
 		}
-		query.ArgsAppay(&row, args)
+		
+		// Apply scanned arguments to the row struct fields
+		err = query.ArgsAppay(&row, args)
+		if err != nil {
+			return // Return if ArgsAppay fails
+		}
 		rows = append(rows, row)
 	}
 	if err = sqlRows.Err(); err != nil {

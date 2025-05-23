@@ -343,7 +343,7 @@ func ArgsAppay(row any, args []any) (err error) {
 	}
 
 	// Loop through the struct fields
-	for i := 0; i < rowVal.NumField(); i++ {
+	for i := range rowVal.NumField() {
 
 		// Skip not db fields tagged with "-"
 		if rowType.Field(i).Tag.Get("db") == "-" {
@@ -371,6 +371,17 @@ func ArgsAppay(row any, args []any) (err error) {
 				f.SetUint(uint64(v))
 			case reflect.Bool:
 				f.SetBool(v == 1)
+			}
+		case []byte:
+			// Ensure the target field f in the struct is also []byte
+			if f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.Uint8 {
+				f.SetBytes(v)
+			} else {
+				err = fmt.Errorf(
+					"type mismatch for field %s: expected []byte for DB type []byte, but struct field is %s",
+					rowType.Field(i).Name, f.Type().String(),
+				)
+				return // Return error immediately
 			}
 		default:
 			// Return an error if unsupported type is found
@@ -438,7 +449,7 @@ func fields[T any]() (fields []string) {
 	}
 
 	// Loop through the struct fields
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		// Get the field
 		field := t.Field(i)
 
@@ -508,6 +519,20 @@ func getFieldType(field reflect.StructField) (fieldType string, err error) {
 			fieldType = "bit"
 		case reflect.String:
 			fieldType = "text"
+		case reflect.Slice:
+			// Check if it's a slice of bytes ([]byte)
+			if field.Type.Elem().Kind() == reflect.Uint8 {
+				fieldType = "blob"
+			} else {
+				err = fmt.Errorf("unsupported slice type: %s", field.Type)
+			}
+		case reflect.Struct:
+			// Check if it's time.Time
+			if field.Type == reflect.TypeOf(time.Time{}) {
+				fieldType = "timestamp"
+			} else {
+				err = fmt.Errorf("unsupported struct type: %s", field.Type)
+			}
 		default:
 			// If the type is not supported, return an error
 			err = fmt.Errorf("unsupported type: %s", field.Type.Kind())
