@@ -9,12 +9,18 @@ package sqlh
 
 import (
 	"database/sql"
-	"fmt"
+	"errors"
 
 	"github.com/kirill-scherba/sqlh/query"
 )
 
 var numRows = 10 // number of rows to get in select query
+
+// Exported errors
+var (
+	ErrWhereClauseRequired = errors.New("sqlh: the where clause is required")
+	ErrMultipleRowsFound   = errors.New("sqlh: multiple rows found")
+)
 
 // UpdateAttr struct contains row and where condition and used in Update
 // function as attrs parameter.
@@ -173,29 +179,29 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 // If the row is not found, the function returns a default value for row and
 // an error with message "not found".
 // If multiple rows are found, the function returns a default value for row and
-// an error with message "multiple rows found".
-func Get[T any](db *sql.DB, wheres ...Where) (row T, err error) {
+// an error with message "multiple rows found". It returns a pointer to the row.
+func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error) {
 
 	// Check if the where clause is required
 	if len(wheres) == 0 {
-		err = fmt.Errorf("the where clause is required")
-		return
+		err = ErrWhereClauseRequired
+		return nil, err // Return nil pointer on error
 	}
 
 	// Get rows from database
-	rows, _, err := List[T](db, 0, "", wheres...)
+	rows, _, err := ListRows[T](db, 0, "", 2, wheres...) // Limit to 2 to detect multiple rows
 	if err != nil {
-		return
+		return nil, err // Return nil pointer on error
 	}
 
 	// Check if the row is found
 	switch len(rows) {
 	case 0:
-		err = fmt.Errorf("not found")
+		err = sql.ErrNoRows // No rows found, return nil pointer and sql.ErrNoRows
 	case 1:
-		row = rows[0]
+		row = &rows[0] // One row found, return pointer to the row
 	default:
-		err = fmt.Errorf("multiple rows found")
+		err = ErrMultipleRowsFound // Multiple rows found, return nil pointer and ErrMultipleRowsFound
 	}
 
 	return
@@ -305,7 +311,7 @@ func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wher
 		if err = sqlRows.Scan(args...); err != nil {
 			return
 		}
-		
+
 		// Apply scanned arguments to the row struct fields
 		err = query.ArgsAppay(&row, args)
 		if err != nil {
