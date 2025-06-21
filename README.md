@@ -34,21 +34,21 @@ Define a Go struct that represents your database table. Use struct tags to defin
 package main
 
 import (
-	"database/sql"
-	"errors"
-	"fmt"
-	"log"
+    "database/sql"
+    "errors"
+    "fmt"
+    "log"
 
-	"github.com/kirill-scherba/sqlh"
-	"github.com/kirill-scherba/sqlh/query"
-	_ "github.com/mattn/go-sqlite3"
+    "github.com/kirill-scherba/sqlh"
+    "github.com/kirill-scherba/sqlh/query"
+    _ "github.com/mattn/go-sqlite3"
 )
 
 // User represents the users table.
 type User struct {
-	ID    int64  `db:"id" db_key:"not null primary key autoincrement"`
-	Name  string `db:"name" db_key:"unique"`
-	Email string `db:"email"`
+    ID    int64  `db:"id" db_key:"not null primary key autoincrement"`
+    Name  string `db:"name" db_key:"unique"`
+    Email string `db:"email"`
 }
 ```
 
@@ -58,53 +58,53 @@ Use the `query.Table` function to generate a `CREATE TABLE` statement from your 
 
 ```go
 func main() {
-	// Open in-memory SQLite database for this example
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
-	if err != nil {
-		log.Fatalf("failed to open database: %v", err)
-	}
-	defer db.Close()
+    // Open in-memory SQLite database for this example
+    db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+    if err != nil {
+        log.Fatalf("failed to open database: %v", err)
+    }
+    defer db.Close()
 
-	// Generate and execute CREATE TABLE statement
-	createStmt, err := query.Table[User]()
-	if err != nil {
-		log.Fatalf("failed to create table query: %v", err)
-	}
-	if _, err := db.Exec(createStmt); err != nil {
-		log.Fatalf("failed to execute create table statement: %v", err)
-	}
-	fmt.Println("Table 'user' created successfully.")
+    // Generate and execute CREATE TABLE statement
+    createStmt, err := query.Table[User]()
+    if err != nil {
+        log.Fatalf("failed to create table query: %v", err)
+    }
+    if _, err := db.Exec(createStmt); err != nil {
+        log.Fatalf("failed to execute create table statement: %v", err)
+    }
+    fmt.Println("Table 'user' created successfully.")
 
-	// Insert a new user
-	alice := User{Name: "Alice", Email: "alice@example.com"}
-	if err := sqlh.Insert(db, alice); err != nil {
-		log.Fatalf("failed to insert user: %v", err)
-	}
-	fmt.Println("Inserted Alice.")
+    // Insert a new user
+    alice := User{Name: "Alice", Email: "alice@example.com"}
+    if err := sqlh.Insert(db, alice); err != nil {
+        log.Fatalf("failed to insert user: %v", err)
+    }
+    fmt.Println("Inserted Alice.")
 
-	// Get the user we just inserted
-	retrievedUser, err := sqlh.Get[User](db, sqlh.Where{Field: "name=", Value: "Alice"})
-	if err != nil {
-		// Check for a specific "not found" error
-		if errors.Is(err, sql.ErrNoRows) {
-			log.Println("User not found.")
-		} else {
-			log.Fatalf("failed to get user: %v", err)
-		}
-		return
-	}
-	fmt.Printf("Retrieved User: ID=%d, Name=%s, Email=%s\n", retrievedUser.ID, retrievedUser.Name, retrievedUser.Email)
+    // Get the user we just inserted
+    retrievedUser, err := sqlh.Get[User](db, sqlh.Where{Field: "name=", Value: "Alice"})
+    if err != nil {
+        // Check for a specific "not found" error
+        if errors.Is(err, sql.ErrNoRows) {
+            log.Println("User not found.")
+        } else {
+            log.Fatalf("failed to get user: %v", err)
+        }
+        return
+    }
+    fmt.Printf("Retrieved User: ID=%d, Name=%s, Email=%s\n", retrievedUser.ID, retrievedUser.Name, retrievedUser.Email)
 
-	// Update Alice's email
-	retrievedUser.Email = "alice.new@example.com"
-	updateAttr := sqlh.UpdateAttr[User]{
-		Row:    *retrievedUser,
-		Wheres: []sqlh.Where{{Field: "id=", Value: retrievedUser.ID}},
-	}
-	if err := sqlh.Update(db, updateAttr); err != nil {
-		log.Fatalf("failed to update user: %v", err)
-	}
-	fmt.Println("Updated Alice's email.")
+    // Update Alice's email
+    retrievedUser.Email = "alice.new@example.com"
+    updateAttr := sqlh.UpdateAttr[User]{
+        Row:    *retrievedUser,
+        Wheres: []sqlh.Where{{Field: "id=", Value: retrievedUser.ID}},
+    }
+    if err := sqlh.Update(db, updateAttr); err != nil {
+        log.Fatalf("failed to update user: %v", err)
+    }
+    fmt.Println("Updated Alice's email.")
 }
 ```
 
