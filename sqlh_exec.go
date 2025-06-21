@@ -171,6 +171,45 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 	return
 }
 
+// Set sets a row in T database table.
+//
+// The function takes a list of Where condition as input parameter.
+// The function checks if the row is found in the database.
+// If the row is not found, the function inserts a new row.
+// If the row is found, the function updates the row.
+// If multiple rows are found, the function returns an error with message "multiple rows found".
+func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
+	// Get rows from database. Limit to 2 to detect multiple rows
+	rows, _, err := ListRows[T](db, 0, "", 2, wheres...)
+	if err != nil {
+		return err
+	}
+
+	// Check if the row is found
+	switch len(rows) {
+	case 0:
+		// No rows found, insert new row
+		err = Insert(db, row)
+		if err != nil {
+			return err
+		}
+
+	case 1:
+		// One row found, update row
+		err = Update(db, UpdateAttr[T]{Row: row, Wheres: wheres})
+		if err != nil {
+			return err
+		}
+
+	default:
+		// Multiple rows found, return error
+		err = ErrMultipleRowsFound
+	}
+
+	return
+}
+
+
 // Get returns a row from T database table.
 //
 // The function takes a list of Where condition as input parameter.
