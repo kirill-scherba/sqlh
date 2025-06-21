@@ -13,7 +13,11 @@ import (
 	"time"
 )
 
-var ErrTypeIsNotStruct = fmt.Errorf("type is not a struct")
+// Exported errors
+var (
+	ErrTypeIsNotStruct              = fmt.Errorf("type is not a struct")
+	ErrWhereClauseRequiredForUpdate = fmt.Errorf("where clause should be set in the Update statement")
+)
 
 // SelectAttr defines attributes for SELECT statement.
 type SelectAttr struct {
@@ -147,9 +151,7 @@ func Update[T any](wheres ...string) (string, error) {
 
 	// Where clause should be set
 	if len(wheres) == 0 {
-		return "", fmt.Errorf(
-			"where clause should be set in the Update statement",
-		)
+		return "", ErrWhereClauseRequiredForUpdate
 	}
 
 	// Return UPDATE statement
@@ -284,13 +286,15 @@ func Delete[T any](wheres ...string) (string, error) {
 	return fmt.Sprintf("DELETE from %s%s;", name[T](), where), nil
 }
 
-// Args returns the arguments array for the given struct type. The given struct
-// may be a pointer to struct or struct.
+// Args returns the arguments array for the given struct type.
+// The given struct may be a pointer to struct or struct.
 //
-// It loops through the given struct fields and get field values.
-// Supported types are string, float64, time.Time, int64 and bool.
-// If unsupported type is found, it returns an error.
-func Args(row any) ([]any, error) {
+// The forWrite parameter controls the behavior:
+//   - If forWrite is true, it returns a slice of values for INSERT/UPDATE,
+//     skipping autoincrement fields.
+//   - If forWrite is false, it returns a slice of pointers to copies of field values for
+//     SELECT (for sql.Scan). These pointers are then used with ArgsAppay to populate the struct.
+func Args(row any, forWrite bool) ([]any, error) {
 
 	// Get row value and type from the given row
 	rowVal := reflect.ValueOf(row)
@@ -308,14 +312,26 @@ func Args(row any) ([]any, error) {
 	// Make arguments array for the given struct
 	args := make([]any, 0, rowVal.NumField())
 	for i := range rowVal.NumField() {
+		field := rowType.Field(i)
 
-		// Skip not db fields tagged with "-"
-		if rowType.Field(i).Tag.Get("db") == "-" {
+		// For write operations, skip autoincrement fields.
+		if forWrite && strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "autoincrement") {
 			continue
 		}
 
-		arg := rowVal.Field(i).Interface()
-		args = append(args, &arg)
+		// Always skip fields tagged with db:"-"
+		if field.Tag.Get("db") == "-" {
+			continue
+		}
+
+		if forWrite {
+			// For writing, get the value of the field.
+			args = append(args, rowVal.Field(i).Interface())
+		} else {
+			// For reading/scanning, get a pointer to a copy of the field's value.
+			arg := rowVal.Field(i).Interface()
+			args = append(args, &arg)
+		}
 	}
 
 	return args, nil
@@ -452,6 +468,12 @@ func fields[T any]() (fields []string) {
 	for i := range t.NumField() {
 		// Get the field
 		field := t.Field(i)
+
+		// Skip autoincrement fields
+		if strings.Contains(strings.ToLower(field.Tag.Get("db_key")),
+			"autoincrement") {
+			continue
+		}
 
 		// If the field name is not empty and the db tag is not set to "-"
 		// add the field name to the slice
