@@ -378,6 +378,8 @@ func ArgsAppay(row any, args []any) (err error) {
 			f.SetFloat(v)
 		case time.Time:
 			f.Set(reflect.ValueOf(v))
+		case bool:
+			f.SetBool(v)
 		case int64:
 			// Set the field value based on the type of the field
 			switch f.Kind() {

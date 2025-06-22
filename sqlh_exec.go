@@ -90,10 +90,18 @@ func Insert[T any](db *sql.DB, rows ...T) (err error) {
 		return
 	}
 
+	// Commit or rollback transaction
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+
 	// Create prepared insert statement
 	stmt, err := tx.Prepare(insertStmt)
 	if err != nil {
-		tx.Rollback()
 		return
 	}
 	defer stmt.Close()
@@ -101,21 +109,17 @@ func Insert[T any](db *sql.DB, rows ...T) (err error) {
 	// Insert rows
 	for _, row := range rows {
 		// Get arguments from the row
-		args, err := query.Args(row, forWrite)
-		if err != nil {
-			tx.Rollback()
-			return err
+		args, errArgs := query.Args(row, forWrite)
+		if errArgs != nil {
+			err = errArgs
+			return
 		}
 		// Execute insert statement with arguments
 		_, err = stmt.Exec(args...)
 		if err != nil {
-			tx.Rollback()
-			return err
+			return
 		}
 	}
-
-	// Commit transaction and return
-	err = tx.Commit()
 	return
 }
 
@@ -134,6 +138,15 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 		return
 	}
 
+	// Commit or rollback transaction
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+
 	// Update rows
 	for _, attr := range attrs {
 
@@ -144,25 +157,25 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 		}
 
 		// Create update statement
-		updateStmt, err := query.Update[T](wheres...)
-		if err != nil {
-			tx.Rollback()
-			return err
+		updateStmt, errUpdate := query.Update[T](wheres...)
+		if errUpdate != nil {
+			err = errUpdate
+			return
 		}
 
 		// Create prepared update statement
-		stmt, err := tx.Prepare(updateStmt)
-		if err != nil {
-			tx.Rollback()
-			return err
+		stmt, errPrepare := tx.Prepare(updateStmt)
+		if errPrepare != nil {
+			err = errPrepare
+			return
 		}
 		defer stmt.Close()
 
 		// Create struct attr.Row field values array
-		args, err := query.Args(attr.Row, forWrite)
-		if err != nil {
-			tx.Rollback()
-			return err
+		args, errArgs := query.Args(attr.Row, forWrite)
+		if errArgs != nil {
+			err = errArgs
+			return
 		}
 
 		// Add where conditions to args array
@@ -173,13 +186,9 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 		// Execute update statement
 		_, err = stmt.Exec(args...)
 		if err != nil {
-			tx.Rollback()
-			return err
+			return
 		}
 	}
-
-	// Commit transaction and return
-	err = tx.Commit()
 
 	return
 }
@@ -193,22 +202,26 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 // If the row is found, the function updates the row.
 // If multiple rows are found, the function returns an error with message "multiple rows found".
 func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
+
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return
 	}
-	// Defer a rollback in case of error.
+
+	// Commit or rollback transaction
 	defer func() {
 		if err != nil {
 			tx.Rollback()
+			return
 		}
+		err = tx.Commit()
 	}()
 
 	// Get rows from database using the transaction. Limit to 2 to detect multiple rows.
 	rows, _, err := listRows[T](tx, 0, "", 2, wheres...)
 	if err != nil {
-		return err // Rollback will be called
+		return // Rollback will be called
 	}
 
 	// Check if the row is found and perform action within the transaction
@@ -265,7 +278,6 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 
 	return
 }
-
 
 // Get returns a row from T database table.
 //
@@ -325,12 +337,20 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 	if err != nil {
 		return
 	}
-
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
 		return
 	}
+
+	// Commit or rollback transaction
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
 
 	// Create prepared delete statement
 	stmt, err := tx.Prepare(deleteStmt)
@@ -341,13 +361,6 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 
 	// Execute delete statement with where arguments
 	_, err = stmt.Exec(whereArgs...)
-	if err != nil {
-		tx.Rollback()
-		return
-	}
-
-	// Commit transaction and return
-	err = tx.Commit()
 	return
 }
 
@@ -366,13 +379,16 @@ func List[T any](db *sql.DB, previous int, orderBy string, wheres ...Where) (
 }
 
 // ListRows remains the public API, calling listRows with the *sql.DB
-func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int, wheres ...Where) (
+func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int,
+	wheres ...Where) (
+
 	rows []T, pagination int, err error) {
 	return listRows[T](db, previous, orderBy, numRows, wheres...)
 }
 
 // listRows is the internal implementation for ListRows that works with a querier.
-func listRows[T any](q querier, previous int, orderBy string, numRows int, wheres ...Where) (rows []T, pagination int, err error) {
+func listRows[T any](q querier, previous int, orderBy string, numRows int,
+	wheres ...Where) (rows []T, pagination int, err error) {
 
 	var attr = &query.SelectAttr{}
 	var selectArgs []any
