@@ -74,7 +74,7 @@ func TestSQLOperations(t *testing.T) {
 	t.Run("List", func(t *testing.T) {
 		// Insert another user to have multiple rows
 		user2 := TestTable{Name: "Bob", Data: []byte("data2")}
-		err := Insert(db, user2)
+		err := Insert(db, &user2)
 		require.NoError(t, err)
 
 		// List all users
@@ -87,6 +87,19 @@ func TestSQLOperations(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, bobs, 1)
 		assert.Equal(t, "Bob", bobs[0].Name)
+	})
+
+	// 6. Test list range with pointer
+	t.Run("ListRange", func(t *testing.T) {
+		// List with where clause
+		for row := range ListRange[TestTable](db, 0, "name ASC", 0, Where{"name=", "Bob"}) {
+			assert.Equal(t, "Bob", row.Name)
+		}
+
+		// List with where clause
+		for row := range ListRange[TestTable](db, 0, "name ASC", 0, Where{"name=", "Alice"}) {
+			assert.Equal(t, "Alice", row.Name)
+		}
 	})
 
 	// 4. Test Delete

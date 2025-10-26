@@ -10,6 +10,8 @@ package sqlh
 import (
 	"database/sql"
 	"errors"
+	"iter"
+	"reflect"
 
 	"github.com/kirill-scherba/sqlh/query"
 )
@@ -364,87 +366,6 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 	return
 }
 
-// List returns rows from T database table.
-//
-// The function takes a list of Where condition as input parameter.
-// The function executes SELECT statement with the given where conditions.
-// If the rows are found, the function returns the rows and nil as error.
-// If the rows are not found, the function returns a default value for rows and
-// an error with message "not found".
-func List[T any](db *sql.DB, previous int, orderBy string, wheres ...Where) (
-	rows []T, pagination int, err error) {
-
-	// Call ListRows function with numRows as number of rows
-	return ListRows[T](db, previous, orderBy, numRows, wheres...)
-}
-
-// ListRows remains the public API, calling listRows with the *sql.DB
-func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int,
-	wheres ...Where) (
-
-	rows []T, pagination int, err error) {
-	return listRows[T](db, previous, orderBy, numRows, wheres...)
-}
-
-// listRows is the internal implementation for ListRows that works with a querier.
-func listRows[T any](q querier, previous int, orderBy string, numRows int,
-	wheres ...Where) (rows []T, pagination int, err error) {
-
-	var attr = &query.SelectAttr{}
-	var selectArgs []any
-
-	// Where clauses
-	for _, w := range wheres {
-		if w.Value == nil {
-			attr.Wheres = append(attr.Wheres, w.Field)
-			continue
-		}
-		attr.Wheres = append(attr.Wheres, w.Field+"?")
-		selectArgs = append(selectArgs, w.Value)
-	}
-
-	// Order by
-	attr.OrderBy = orderBy
-
-	// Limit and offset
-	attr.Paginator = &query.Paginator{
-		Offset: previous,
-		Limit:  numRows,
-	}
-
-	// Create select statement
-	selectStmt, _ := query.Select[T](attr)
-
-	// Execute select statement
-	sqlRows, err := q.Query(selectStmt, selectArgs...)
-	if err != nil {
-		return
-	}
-	defer sqlRows.Close()
-
-	// Get rows
-	for sqlRows.Next() {
-		var row T
-		args, _ := query.Args(row, forRead)
-		if err = sqlRows.Scan(args...); err != nil {
-			return
-		}
-
-		// Apply scanned arguments to the row struct fields
-		err = query.ArgsAppay(&row, args)
-		if err != nil {
-			return // Return if ArgsAppay fails
-		}
-		rows = append(rows, row)
-	}
-	if err = sqlRows.Err(); err != nil {
-		return
-	}
-	pagination = previous + len(rows)
-
-	return
-}
-
 // Count returns the number of rows from the selected T table in the database.
 //
 // The function accepts a variadic list of Where conditions to filter the rows.
@@ -483,5 +404,165 @@ func Count[T any](db *sql.DB, wheres ...Where) (count int, err error) {
 		}
 	}
 
+	return
+}
+
+// List returns rows from T database table.
+//
+// The function takes a list of Where condition as input parameter.
+// The function executes SELECT statement with the given where conditions.
+// If the rows are found, the function returns the rows and nil as error.
+// If the rows are not found, the function returns a default value for rows and
+// an error with message "not found".
+func List[T any](db *sql.DB, previous int, orderBy string, wheres ...Where) (
+	rows []T, pagination int, err error) {
+
+	// Call ListRows function with default number of rows
+	return ListRows[T](db, previous, orderBy, numRows, wheres...)
+}
+
+// ListRows remains the public API, calling listRows with the *sql.DB
+func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int,
+	wheres ...Where) (rows []T, pagination int, err error) {
+
+	// Call listRows function
+	return listRows[T](db, previous, orderBy, numRows, wheres...)
+}
+
+// ListRange is a function that returns an iterator over the records in the
+// database. It takes a querier, previous number of rows, order by string,
+// number of rows to retrieve, and a variadic list of where conditions to filter
+// the rows. The returned iterator yields each row in the database, and will
+// stop yielding when all the rows have been retrieved or when the yield
+// function returns false.
+func ListRange[T any](db *sql.DB, previous int, orderBy string, numRows int,
+	wheres ...Where) iter.Seq[T] {
+
+	// Create and Execute select statement
+	sqlRows, err := listQuery[T](db, previous, orderBy, numRows, wheres...)
+
+	// Return iterator
+	return func(yield func(T) bool) {
+
+		// Iterate over rows
+		for err == nil && sqlRows.Next() {
+			// Create a new row
+			var row = makeRow[T]()
+
+			// Get arguments
+			args, errArgs := query.Args(row, forRead)
+			if errArgs != nil {
+				// Stop iteration if Args fails
+				break
+			}
+
+			// Scan into row
+			if sqlRows.Scan(args...) != nil {
+				// Stop iteration if Scan fails
+				break
+			}
+
+			// Apply scanned arguments to the row struct fields
+			if query.ArgsAppay(&row, args) != nil {
+				// Return if ArgsAppay fails
+				break
+			}
+
+			// Call yield for each element and check its return value
+			if !yield(row) {
+				// Stop iteration if yield returns false (e.g., due to a 'break'
+				// in the range loop)
+				break
+			}
+		}
+
+		// Check listQuery error and close sqlRows
+		if err == nil {
+			sqlRows.Close()
+		}
+	}
+}
+
+// makeRow creates a new row of type T. If T is a pointer, it will create a new pointer
+// with default values for its fields. If T is not a pointer, it will return a default
+// value for T.
+func makeRow[T any]() (row T) {
+	rowType := reflect.TypeOf(row)
+	if rowType.Kind() == reflect.Pointer {
+		row = reflect.New(rowType.Elem()).Interface().(T)
+	}
+	return
+}
+
+// listRows is the internal implementation for ListRows that works with a querier.
+func listRows[T any](q querier, previous int, orderBy string, numRows int,
+	wheres ...Where) (rows []T, pagination int, err error) {
+
+	// Create and Execute select statement
+	sqlRows, err := listQuery[T](q, previous, orderBy, numRows, wheres...)
+	if err != nil {
+		return
+	}
+	defer sqlRows.Close()
+
+	// Get rows
+	for sqlRows.Next() {
+		var row = makeRow[T]()
+		args, _ := query.Args(row, forRead)
+		if err = sqlRows.Scan(args...); err != nil {
+			return
+		}
+
+		// Apply scanned arguments to the row struct fields
+		err = query.ArgsAppay(&row, args)
+		if err != nil {
+			return // Return if ArgsAppay fails
+		}
+		rows = append(rows, row)
+	}
+	if err = sqlRows.Err(); err != nil {
+		return
+	}
+	pagination = previous + len(rows)
+
+	return
+}
+
+// listQuery is an internal implementation for ListRows that works with a querier.
+// It takes a querier, previous number of rows, order by string, number of rows to retrieve,
+// and a variadic list of where conditions to filter the rows.
+// The function returns a pointer to the sql.Rows and an error if encountered.
+// The returned pointer to sql.Rows contains the rows retrieved from the database.
+// The error is returned if the query execution fails.
+func listQuery[T any](q querier, previous int, orderBy string, numRows int,
+	wheres ...Where) (sqlRows *sql.Rows, err error) {
+
+	var attr = &query.SelectAttr{}
+	var selectArgs []any
+
+	// Where clauses
+	for _, w := range wheres {
+		if w.Value == nil {
+			attr.Wheres = append(attr.Wheres, w.Field)
+			continue
+		}
+		attr.Wheres = append(attr.Wheres, w.Field+"?")
+		selectArgs = append(selectArgs, w.Value)
+	}
+
+	// Order by
+	attr.OrderBy = orderBy
+
+	// Limit and offset
+	attr.Paginator = &query.Paginator{
+		Offset: previous,
+		Limit:  numRows,
+	}
+
+	// Create select statement
+	selectStmt, _ := query.Select[T](attr)
+
+	// Execute select statement
+	sqlRows, err = q.Query(selectStmt, selectArgs...)
 	return
 }
