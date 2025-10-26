@@ -5,6 +5,16 @@ It's intended to be a human-readable history of changes.
 
 # Changelog
 
+## [v0.2.2] - 2025-10-26
+
+### Added
+
+- The ListRange function created to use in range loops
+
+### Changed
+
+- Argument types expanded
+
 ## [v0.2.1] - 2025-06-23
 
 ### Fixed

@@ -299,7 +299,7 @@ func Args(row any, forWrite bool) ([]any, error) {
 	// Get row value and type from the given row
 	rowVal := reflect.ValueOf(row)
 	rowType := rowVal.Type()
-	if rowVal.Kind() == reflect.Ptr {
+	if rowVal.Kind() == reflect.Pointer {
 		rowVal = rowVal.Elem()
 		rowType = rowType.Elem()
 	}
@@ -348,7 +348,7 @@ func ArgsAppay(row any, args []any) (err error) {
 
 	rowVal := reflect.ValueOf(row).Elem()
 	rowType := reflect.TypeOf(row).Elem()
-	if rowVal.Kind() == reflect.Ptr {
+	if rowVal.Kind() == reflect.Pointer {
 		rowVal = rowVal.Elem()
 		rowType = rowType.Elem()
 	}
@@ -374,22 +374,45 @@ func ArgsAppay(row any, args []any) (err error) {
 		switch v := arg.(type) {
 		case string:
 			f.SetString(v)
-		case float64:
-			f.SetFloat(v)
+
 		case time.Time:
 			f.Set(reflect.ValueOf(v))
+
 		case bool:
 			f.SetBool(v)
+
+		case float64:
+			f.SetFloat(v)
+		case float32:
+			f.SetFloat(float64(v))
+
+		case int:
+			f.SetInt(int64(v))
+		case int8:
+			f.SetInt(int64(v))
+		case int16:
+			f.SetInt(int64(v))
+		case int32:
+			f.SetInt(int64(v))
 		case int64:
-			// Set the field value based on the type of the field
-			switch f.Kind() {
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				f.SetInt(v)
-			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				f.SetUint(uint64(v))
-			case reflect.Bool:
-				f.SetBool(v == 1)
-			}
+			f.SetInt(v)
+
+		case uint:
+			f.SetUint(uint64(v))
+		case uint8:
+			f.SetUint(uint64(v))
+		case uint16:
+			f.SetUint(uint64(v))
+		case uint32:
+			f.SetUint(uint64(v))
+		case uint64:
+			f.SetUint(v)
+
+		case complex64:
+			f.SetComplex(complex128(v))
+		case complex128:
+			f.SetComplex(v)
+
 		case []byte:
 			// Ensure the target field f in the struct is also []byte
 			if f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.Uint8 {
@@ -401,6 +424,7 @@ func ArgsAppay(row any, args []any) (err error) {
 				)
 				return // Return error immediately
 			}
+
 		default:
 			// Return an error if unsupported type is found
 			err = fmt.Errorf(
@@ -422,7 +446,7 @@ func checkType[T any]() (err error) {
 	t := reflect.TypeOf(new(T)).Elem()
 
 	// If the type is a pointer, get the type of the struct it points to
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -443,7 +467,7 @@ func name[T any]() string {
 	t := reflect.TypeOf(new(T)).Elem()
 
 	// If the type is a pointer, get the type of the struct it points to
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -462,7 +486,7 @@ func fields[T any]() (fields []string) {
 	t := reflect.TypeOf(new(T)).Elem()
 
 	// If the type is a pointer, get the type of the struct it points to
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
