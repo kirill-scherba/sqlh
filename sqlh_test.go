@@ -22,6 +22,11 @@ type TestTable struct {
 	Data []byte `db:"data"`
 }
 
+type TestTable2 struct {
+	ID    int64 `db:"id" db_key:"not null primary key"`
+	Value int64 `db:"value"`
+}
+
 func TestSQLOperations(t *testing.T) {
 
 	// Open in-memory SQLite database for testing
@@ -31,6 +36,12 @@ func TestSQLOperations(t *testing.T) {
 
 	// Create table
 	createStmt, err := query.Table[TestTable]()
+	require.NoError(t, err)
+	_, err = db.Exec(createStmt)
+	require.NoError(t, err, "failed to create table")
+
+	// Create table 2
+	createStmt, err = query.Table[TestTable2]()
 	require.NoError(t, err)
 	_, err = db.Exec(createStmt)
 	require.NoError(t, err, "failed to create table")
@@ -50,6 +61,11 @@ func TestSQLOperations(t *testing.T) {
 		assert.Equal(t, int64(1), retrievedUser.ID)
 		assert.Equal(t, "Alice", retrievedUser.Name)
 		assert.Equal(t, []byte("data1"), retrievedUser.Data)
+
+		// Insert to test table 2
+		testTable2 := TestTable2{ID: 1, Value: 42}
+		err = Insert(db, testTable2)
+		require.NoError(t, err)
 	})
 
 	// 2. Test Update
@@ -87,6 +103,31 @@ func TestSQLOperations(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, bobs, 1)
 		assert.Equal(t, "Bob", bobs[0].Name)
+	})
+
+	t.Run("List with Joins", func(t *testing.T) {
+
+		type testTable struct {
+
+			// Test table fields
+			ID   int64  `db:"id" db_key:"not null primary key autoincrement"`
+			Name string `db:"name"`
+			Data []byte `db:"data"`
+
+			// Test table 2 fields
+			ID2   int64 `db:"id"`
+			Value int64 `db:"value"`
+		}
+
+		// List all users
+		users, _, err := ListRows[testTable](db, 0, "name ASC", 100,
+			query.Join{Name: "TestTable2", On: "TestTable2.id = TestTable.id"})
+		require.NoError(t, err)
+		// assert.Len(t, users, 2)
+
+		for _, user := range users {
+			t.Logf("user: %+v", user)
+		}
 	})
 
 	// 6. Test list range with pointer

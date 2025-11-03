@@ -221,7 +221,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 	}()
 
 	// Get rows from database using the transaction. Limit to 2 to detect multiple rows.
-	rows, _, err := listRows[T](tx, 0, "", 2, wheres...)
+	rows, _, err := listRows[T](tx, 0, "", 2, wheresToAttrs(wheres)...)
 	if err != nil {
 		return // Rollback will be called
 	}
@@ -298,8 +298,8 @@ func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error) {
 		return nil, err // Return nil pointer on error
 	}
 
-	// Get rows from database
-	rows, _, err := ListRows[T](db, 0, "", 2, wheres...) // Limit to 2 to detect multiple rows
+	// Get rows from database. Limit to 2 to detect multiple rows
+	rows, _, err := ListRows[T](db, 0, "", 2, wheresToAttrs(wheres)...)
 	if err != nil {
 		return nil, err // Return nil pointer on error
 	}
@@ -414,19 +414,19 @@ func Count[T any](db *sql.DB, wheres ...Where) (count int, err error) {
 // If the rows are found, the function returns the rows and nil as error.
 // If the rows are not found, the function returns a default value for rows and
 // an error with message "not found".
-func List[T any](db *sql.DB, previous int, orderBy string, wheres ...Where) (
+func List[T any](db *sql.DB, previous int, orderBy string, listAttrs ...any) (
 	rows []T, pagination int, err error) {
 
 	// Call ListRows function with default number of rows
-	return ListRows[T](db, previous, orderBy, numRows, wheres...)
+	return ListRows[T](db, previous, orderBy, numRows, listAttrs...)
 }
 
 // ListRows remains the public API, calling listRows with the *sql.DB
 func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int,
-	wheres ...Where) (rows []T, pagination int, err error) {
+	listAttrs ...any) (rows []T, pagination int, err error) {
 
 	// Call listRows function
-	return listRows[T](db, previous, orderBy, numRows, wheres...)
+	return listRows[T](db, previous, orderBy, numRows, listAttrs...)
 }
 
 // ListRange is a function that returns an iterator over the records in the
@@ -436,10 +436,10 @@ func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int,
 // stop yielding when all the rows have been retrieved or when the yield
 // function returns false.
 func ListRange[T any](db *sql.DB, previous int, orderBy string, numRows int,
-	wheres ...Where) iter.Seq[T] {
+	listAttrs ...any) iter.Seq[T] {
 
 	// Create and Execute select statement
-	sqlRows, err := listQuery[T](db, previous, orderBy, numRows, wheres...)
+	sqlRows, err := listQuery[T](db, previous, orderBy, numRows, listAttrs...)
 
 	// Return iterator
 	return func(yield func(T) bool) {
@@ -483,6 +483,16 @@ func ListRange[T any](db *sql.DB, previous int, orderBy string, numRows int,
 	}
 }
 
+// wheresToAttrs converts a slice of Where conditions to a slice of any values.
+// It's used to convert Where conditions to a slice of arguments for the
+// Exec or Query functions.
+func wheresToAttrs(wheres []Where) (listAttrs []any) {
+	for _, where := range wheres {
+		listAttrs = append(listAttrs, where)
+	}
+	return
+}
+
 // makeRow creates a new row of type T. If T is a pointer, it will create a new pointer
 // with default values for its fields. If T is not a pointer, it will return a default
 // value for T.
@@ -496,10 +506,10 @@ func makeRow[T any]() (row T) {
 
 // listRows is the internal implementation for ListRows that works with a querier.
 func listRows[T any](q querier, previous int, orderBy string, numRows int,
-	wheres ...Where) (rows []T, pagination int, err error) {
+	listAttrs ...any) (rows []T, pagination int, err error) {
 
 	// Create and Execute select statement
-	sqlRows, err := listQuery[T](q, previous, orderBy, numRows, wheres...)
+	sqlRows, err := listQuery[T](q, previous, orderBy, numRows, listAttrs...)
 	if err != nil {
 		return
 	}
@@ -535,10 +545,21 @@ func listRows[T any](q querier, previous int, orderBy string, numRows int,
 // The returned pointer to sql.Rows contains the rows retrieved from the database.
 // The error is returned if the query execution fails.
 func listQuery[T any](q querier, previous int, orderBy string, numRows int,
-	wheres ...Where) (sqlRows *sql.Rows, err error) {
+	listAttrs ...any) (sqlRows *sql.Rows, err error) {
 
 	var attr = &query.SelectAttr{}
 	var selectArgs []any
+	var wheres []Where
+
+	// Parse list attributes
+	for _, listAttr := range listAttrs {
+		switch v := listAttr.(type) {
+		case Where:
+			wheres = append(wheres, v)
+		case query.Join:
+			attr.Joins = append(attr.Joins, v)
+		}
+	}
 
 	// Where clauses
 	for _, w := range wheres {

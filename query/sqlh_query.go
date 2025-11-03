@@ -24,6 +24,15 @@ type SelectAttr struct {
 	Paginator *Paginator // Offset and limit (optional)
 	Wheres    []string   // Where clauses (optional)
 	OrderBy   string     // Order by (optional)
+	Alias     string     // Alias (optional)
+	Joins     []Join     // Joins (optional)
+}
+
+type Join struct {
+	Join  string // Join type: inner, left, right, full
+	Name  string // Table name
+	Alias string // Alias (optional)
+	On    string // On clause
 }
 
 // Paginator defines attributes for SELECT statement.
@@ -104,7 +113,7 @@ func Table[T any]() (string, error) {
 
 	// Return CREATE TABLE statement
 	q := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);",
-		name[T](),
+		Name[T](),
 		strings.Join(dbFields, ", "),
 	)
 
@@ -129,7 +138,7 @@ func Insert[T any]() (string, error) {
 
 	// Return INSERT statement
 	return fmt.Sprintf("INSERT INTO %s(%s) VALUES(%s);",
-		name[T](),
+		Name[T](),
 		strings.Join(fields, ","),
 		strings.TrimRight(strings.Repeat("?,", len(fields)), ","),
 	), nil
@@ -156,7 +165,7 @@ func Update[T any](wheres ...string) (string, error) {
 
 	// Return UPDATE statement
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s;",
-		name[T](),
+		Name[T](),
 		strings.Join(fields, "=?,")+"=?",
 		strings.Join(wheres, "? AND ")+"?",
 	), nil
@@ -179,10 +188,25 @@ func Select[T any](attr *SelectAttr) (string, error) {
 	}
 
 	// Make where clause and offset limit from attr struct
+	var joins string
 	var where string
 	var limit string
 	var orderby string
+	var name = Name[T]()
+
+	// Check attributes
 	if attr != nil {
+
+		// Alias
+		if len(attr.Alias) > 0 {
+			name = name + " " + attr.Alias
+		}
+
+		// Joins
+		for _, join := range attr.Joins {
+			joins = joins + " " + join.Join + " join " + join.Name + " " + join.Alias + " on " + join.On
+		}
+
 		// Where clauses
 		if len(attr.Wheres) > 0 {
 			where = strings.Join(attr.Wheres, " and ")
@@ -215,8 +239,9 @@ func Select[T any](attr *SelectAttr) (string, error) {
 	}
 
 	// Return the complete SELECT statement
-	return fmt.Sprintf("SELECT * from %s%s%s%s;",
-		name[T](),
+	return fmt.Sprintf("SELECT * from %s%s%s%s%s;",
+		name,
+		joins,
 		where,
 		orderby,
 		limit,
@@ -252,7 +277,7 @@ func Count[T any](attr *SelectAttr) (string, error) {
 	}
 
 	// Return the complete SELECT statement
-	return fmt.Sprintf("SELECT count(*) from %s%s;", name[T](), where), nil
+	return fmt.Sprintf("SELECT count(*) from %s%s;", Name[T](), where), nil
 }
 
 // Delete returns a SQL DELETE statement for the given struct type.
@@ -283,7 +308,7 @@ func Delete[T any](wheres ...string) (string, error) {
 	}
 
 	// Return the complete DELETE statement
-	return fmt.Sprintf("DELETE from %s%s;", name[T](), where), nil
+	return fmt.Sprintf("DELETE from %s%s;", Name[T](), where), nil
 }
 
 // Args returns the arguments array for the given struct type.
@@ -297,14 +322,9 @@ func Delete[T any](wheres ...string) (string, error) {
 func Args(row any, forWrite bool) ([]any, error) {
 
 	// Get row value and type from the given row
-	rowVal := reflect.ValueOf(row)
-	rowType := rowVal.Type()
-	if rowVal.Kind() == reflect.Pointer {
-		rowVal = rowVal.Elem()
-		rowType = rowType.Elem()
-	}
+	rowVal, rowType := getRowVal(row)
 
-	// Check if row is struct
+	// Check if row is not struct
 	if rowVal.Kind() != reflect.Struct {
 		return nil, ErrTypeIsNotStruct
 	}
@@ -346,12 +366,8 @@ func Args(row any, forWrite bool) ([]any, error) {
 // If unsupported type is found, it returns an error.
 func ArgsAppay(row any, args []any) (err error) {
 
-	rowVal := reflect.ValueOf(row).Elem()
-	rowType := reflect.TypeOf(row).Elem()
-	if rowVal.Kind() == reflect.Pointer {
-		rowVal = rowVal.Elem()
-		rowType = rowType.Elem()
-	}
+	// Get row value and type
+	rowVal, rowType := getRowValPtr(row)
 
 	// Check if the given value is a struct
 	if rowVal.Kind() != reflect.Struct {
@@ -437,6 +453,59 @@ func ArgsAppay(row any, args []any) (err error) {
 	return
 }
 
+// Name returns table Name from struct Name.
+//
+// It takes type T as an argument and returns the table Name as a string.
+// The table Name is the lower case version of the struct Name.
+func Name[T any]() string {
+	// Get the type of the struct
+	t := reflect.TypeOf(new(T)).Elem()
+
+	// If the type is a pointer, get the type of the struct it points to
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	// Return the table name as the lower case version of the struct name
+	return strings.ToLower(t.Name())
+}
+
+// getRowVal returns the reflect.Value and reflect.Type of the given row.
+//
+// It takes the given row as an argument and returns the reflect.Value and
+// reflect.Type of the row. If the row is a pointer, it gets the type of the
+// struct it points to.
+func getRowVal(row any) (rowVal reflect.Value, rowType reflect.Type) {
+	rowVal = reflect.ValueOf(row)
+	rowType = rowVal.Type()
+	if rowVal.Kind() == reflect.Pointer {
+		rowVal = rowVal.Elem()
+		rowType = rowType.Elem()
+	}
+	return
+}
+
+// getRowValPtr returns the reflect.Value and reflect.Type of the given row.
+//
+// It takes the given row as an argument and returns the reflect.Value and
+// reflect.Type of the row. If the row is a pointer, it gets the type of the
+// struct it points to.
+//
+// It is similar to getRowVal, but it doesn't dereference the type if it is a
+// pointer. Instead, it returns the type of the pointer itself.
+//
+// This function is useful when you want to check the type of the row itself,
+// instead of the type of the struct it points to.
+func getRowValPtr(row any) (rowVal reflect.Value, rowType reflect.Type) {
+	rowVal = reflect.ValueOf(row).Elem()
+	rowType = reflect.TypeOf(row).Elem()
+	if rowVal.Kind() == reflect.Pointer {
+		rowVal = rowVal.Elem()
+		rowType = rowType.Elem()
+	}
+	return
+}
+
 // checkType checks if the type T is a struct or a pointer to a struct.
 //
 // It takes the type T as an argument and returns an error if the type is not a
@@ -456,23 +525,6 @@ func checkType[T any]() (err error) {
 		err = ErrTypeIsNotStruct
 	}
 	return
-}
-
-// name returns table name from struct name.
-//
-// It takes type T as an argument and returns the table name as a string.
-// The table name is the lower case version of the struct name.
-func name[T any]() string {
-	// Get the type of the struct
-	t := reflect.TypeOf(new(T)).Elem()
-
-	// If the type is a pointer, get the type of the struct it points to
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	// Return the table name as the lower case version of the struct name
-	return strings.ToLower(t.Name())
 }
 
 // fields returns a list of struct field names.
