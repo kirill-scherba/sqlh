@@ -21,18 +21,66 @@ var (
 
 // SelectAttr defines attributes for SELECT statement.
 type SelectAttr struct {
-	Paginator *Paginator // Offset and limit (optional)
-	Wheres    []string   // Where clauses (optional)
-	OrderBy   string     // Order by (optional)
-	Alias     string     // Alias (optional)
-	Joins     []Join     // Joins (optional)
+	// Offset and limit (optional). Example: "0, 10"
+	Paginator *Paginator
+
+	// Where clauses (optional). Example: "id = ?", "name = ?" joined with " and "
+	Wheres []string
+
+	// Order by (optional). Example: "id desc, name asc"
+	OrderBy string
+
+	// Alias (optional). Table name alias used in the fields and joins conditions
+	Alias string
+
+	// Joins (optional). List of joins to other tables used in select
+	Joins []Join
+
+	// Name (optional) replaces the table name. By default, the table name is
+	// taken from the structure type specified when calling the Select function.
+	Name string
 }
 
+// Join defines attributes for JOIN statement.
 type Join struct {
-	Join  string // Join type: inner, left, right, full
-	Name  string // Table name
-	Alias string // Alias (optional)
-	On    string // On clause
+	Join   string   // Join type: inner, left, right, full
+	Name   string   // Table name
+	Alias  string   // Alias (optional)
+	On     string   // On clause
+	Fields []string // Fields
+}
+
+// MakeJoin takes a Join struct as input parameter and returns a Join struct with
+// the name and fields set from the given struct type T.
+//
+// If the Name field of the input Join struct is empty, the function sets it
+// to the table name of the given struct type T.
+//
+// The function also sets the Fields field of the output Join struct by iterating
+// over all fields of the given struct type T and appending them to the
+// Fields field. If the Alias field of the input Join struct is not empty, the
+// function prefixes each field with the alias and a dot.
+//
+// The function returns the output Join struct.
+func MakeJoin[T any](join Join) (out Join) {
+
+	// Copy join to out
+	out = join
+
+	// Set name from table name
+	if len(join.Name) == 0 {
+		out.Name = Name[T]()
+	}
+
+	// Create join fields
+	for _, field := range fields[T](true) {
+		if len(join.Alias) > 0 {
+			field = join.Alias + "." + field
+		}
+		out.Fields = append(out.Fields, field)
+	}
+
+	return
 }
 
 // Paginator defines attributes for SELECT statement.
@@ -189,6 +237,7 @@ func Select[T any](attr *SelectAttr) (string, error) {
 
 	// Make where clause and offset limit from attr struct
 	var joins string
+	var joinsFields []string
 	var where string
 	var limit string
 	var orderby string
@@ -205,6 +254,7 @@ func Select[T any](attr *SelectAttr) (string, error) {
 		// Joins
 		for _, join := range attr.Joins {
 			joins = joins + " " + join.Join + " join " + join.Name + " " + join.Alias + " on " + join.On
+			joinsFields = append(joinsFields, join.Fields...)
 		}
 
 		// Where clauses
@@ -238,8 +288,23 @@ func Select[T any](attr *SelectAttr) (string, error) {
 		}
 	}
 
+	// Make fields
+	fields := fields[T](true)
+	if len(attr.Alias) > 0 {
+		for i := range fields {
+			fields[i] = attr.Alias + "." + fields[i]
+		}
+	}
+	// Append joins fields
+	fields = append(fields, joinsFields...)
+
+	// Make select fields string
+	fieldsStr := strings.Join(fields, ", ")
+	// fieldsStr = "*"
+
 	// Return the complete SELECT statement
-	return fmt.Sprintf("SELECT * from %s%s%s%s%s;",
+	return fmt.Sprintf("SELECT %s from %s%s%s%s%s;",
+		fieldsStr,
 		name,
 		joins,
 		where,
@@ -442,11 +507,9 @@ func ArgsAppay(row any, args []any) (err error) {
 			}
 
 		default:
-			// Return an error if unsupported type is found
-			err = fmt.Errorf(
-				"unknown value type for field %s: %T",
-				rowVal.Type().Field(i).Name, v,
-			)
+			// When unsupported type is found, usali it may be nil, we set zero
+			// to this field (zero value of v's type)
+			f.SetZero()
 		}
 	}
 
@@ -534,7 +597,7 @@ func checkType[T any]() (err error) {
 // The names are determined by the db tag in the struct field.
 // If the db tag is not specified, the field name is used as the
 // table field name.
-func fields[T any]() (fields []string) {
+func fields[T any](alls ...bool) (fields []string) {
 	t := reflect.TypeOf(new(T)).Elem()
 
 	// If the type is a pointer, get the type of the struct it points to
@@ -542,13 +605,19 @@ func fields[T any]() (fields []string) {
 		t = t.Elem()
 	}
 
+	// Check parameter all
+	var all bool
+	if len(alls) > 0 && alls[0] {
+		all = true
+	}
+
 	// Loop through the struct fields
 	for i := range t.NumField() {
 		// Get the field
 		field := t.Field(i)
 
-		// Skip autoincrement fields
-		if strings.Contains(strings.ToLower(field.Tag.Get("db_key")),
+		// Skip autoincrement fields if all is false
+		if !all && strings.Contains(strings.ToLower(field.Tag.Get("db_key")),
 			"autoincrement") {
 			continue
 		}

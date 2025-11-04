@@ -121,7 +121,7 @@ func TestSelect(t *testing.T) {
 
 		attr := &SelectAttr{
 			Wheres: []string{"name = ?", "cost > ?"},
-			Alias:  "t",
+			// Alias:  "t",
 		}
 
 		selectQuery, err = Select[SomeTable](attr)
@@ -174,12 +174,11 @@ func TestSelect(t *testing.T) {
 		attr := &SelectAttr{
 			Wheres: []string{"t.name = ?", "t.cost > ?"},
 			Alias:  "t",
-			Joins: []Join{{
+			Joins: []Join{MakeJoin[OtherTable](Join{
 				Join:  "left",
-				Name:  Name[OtherTable](),
 				Alias: "o",
 				On:    "t.name = o.name",
-			}},
+			})},
 		}
 
 		selectQuery, err = Select[SomeTable](attr)
@@ -208,19 +207,22 @@ func TestSelect(t *testing.T) {
 		// Get rows
 		var l = 0
 		for sqlRows.Next() {
+			// Row structs to get values from scanned row
 			someTable := SomeTable{}
 			otherTable := OtherTable{}
 
-			// Get arguments and scan row
+			// Get arguments from structs
 			args1, _ := Args(someTable, false)
 			args2, _ := Args(otherTable, false)
 			args := append(args1, args2...)
+
+			// Scan row
 			if err = sqlRows.Scan(args...); err != nil {
 				err = fmt.Errorf("failed to scan row: %v", err)
 				t.Fatal(err)
 			}
 
-			// Apply scanned arguments to the row struct fields
+			// Apply scanned arguments to the structs
 			err = ArgsAppay(&someTable, args1)
 			if err != nil {
 				err = fmt.Errorf("failed to apply arguments: %v", err)
@@ -232,6 +234,7 @@ func TestSelect(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			// Log scanned row by struct
 			t.Logf("row someTable: %+v", someTable)
 			t.Logf("row otherTable: %+v", otherTable)
 			l++

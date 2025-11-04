@@ -221,7 +221,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 	}()
 
 	// Get rows from database using the transaction. Limit to 2 to detect multiple rows.
-	rows, _, err := listRows[T](tx, 0, "", 2, wheresToAttrs(wheres)...)
+	rows, _, err := ListRows[T](tx, 0, "", 2, wheresToAttrs(wheres)...)
 	if err != nil {
 		return // Rollback will be called
 	}
@@ -414,7 +414,7 @@ func Count[T any](db *sql.DB, wheres ...Where) (count int, err error) {
 // If the rows are found, the function returns the rows and nil as error.
 // If the rows are not found, the function returns a default value for rows and
 // an error with message "not found".
-func List[T any](db *sql.DB, previous int, orderBy string, listAttrs ...any) (
+func List[T any](db querier, previous int, orderBy string, listAttrs ...any) (
 	rows []T, pagination int, err error) {
 
 	// Call ListRows function with default number of rows
@@ -422,20 +422,23 @@ func List[T any](db *sql.DB, previous int, orderBy string, listAttrs ...any) (
 }
 
 // ListRows remains the public API, calling listRows with the *sql.DB
-func ListRows[T any](db *sql.DB, previous int, orderBy string, numRows int,
+func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 	listAttrs ...any) (rows []T, pagination int, err error) {
 
-	// Call listRows function
-	return listRows[T](db, previous, orderBy, numRows, listAttrs...)
+	// Iterate over list records and append it to rows slice
+	for row := range ListRange[T](db, previous, orderBy, numRows, listAttrs...) {
+		rows = append(rows, row)
+	}
+
+	return
 }
 
-// ListRange is a function that returns an iterator over the records in the
-// database. It takes a querier, previous number of rows, order by string,
-// number of rows to retrieve, and a variadic list of where conditions to filter
-// the rows. The returned iterator yields each row in the database, and will
-// stop yielding when all the rows have been retrieved or when the yield
-// function returns false.
-func ListRange[T any](db *sql.DB, previous int, orderBy string, numRows int,
+// ListRange returns an iterator for the given query and list of attributes.
+// The iterator yields elements of type T until the end of the result set is reached.
+// It takes a list of Where condition as input parameter.
+// The function executes SELECT statement with the given where conditions.
+// If the rows are found, the function returns an iterator for the rows and nil as error.
+func ListRange[T any](db querier, previous int, orderBy string, numRows int,
 	listAttrs ...any) iter.Seq[T] {
 
 	// Create and Execute select statement
@@ -443,9 +446,14 @@ func ListRange[T any](db *sql.DB, previous int, orderBy string, numRows int,
 
 	// Return iterator
 	return func(yield func(T) bool) {
+		// Check listQuery error
+		if err != nil {
+			return
+		}
+		defer sqlRows.Close()
 
 		// Iterate over rows
-		for err == nil && sqlRows.Next() {
+		for sqlRows.Next() {
 			// Create a new row
 			var row = makeRow[T]()
 
@@ -475,10 +483,97 @@ func ListRange[T any](db *sql.DB, previous int, orderBy string, numRows int,
 				break
 			}
 		}
+	}
+}
 
-		// Check listQuery error and close sqlRows
-		if err == nil {
-			sqlRows.Close()
+// QueryRange returns an iterator over the rows in the database. It takes a
+// querier, a select query string and a variadic list of query arguments.
+// The returned iterator yields each row in the database, and will stop yielding
+// when all the rows have been retrieved or when the yield function returns false.
+// The yielded value is a pointer to a struct of type T, and a new instance of
+// the struct is created for each yielded value.
+// The function will return an error if the query execution fails.
+func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Seq[T] {
+
+	// Return iterator
+	return func(yield func(row T) bool) {
+
+		// Execute query
+		rows, err := db.Query(selectQuery, queryArgs...)
+		if err != nil {
+			return
+		}
+		defer rows.Close()
+
+		var yieldArg T
+		yieldValue := reflect.ValueOf(&yieldArg).Elem()
+		rowVal := reflect.New(yieldValue.Type()).Elem()
+
+		for rows.Next() {
+			// Create a new instance of the yield argument struct for each row.
+			// This ensures that each yielded value is a distinct entity.
+			scanArgs := make([]any, 0, rowVal.NumField())
+			argsByStruct := make([][]any, 0, rowVal.NumField())
+
+			// Prepare scan arguments for all fields in T
+			for i := range rowVal.NumField() {
+				field := rowVal.Field(i)
+
+				// If type of field is error
+				if field.Type().String() == "error" {
+					continue
+				}
+
+				// We need a pointer to the field to scan into it.
+				// If the field itself is a pointer, we create a new object for it.
+				// If it's a value, we get its address.
+				// create new object if it's a pointer
+				var fieldPtr reflect.Value
+				if field.Kind() == reflect.Pointer {
+					// Create new object for the pointer
+					newValue := reflect.New(field.Type().Elem())
+					// Set the field to point to the new object
+					field.Set(newValue)
+					// Get the address of the new object
+					fieldPtr = newValue
+				} else {
+					fieldPtr = field.Addr()
+				}
+
+				// Get arguments
+				args, err := query.Args(fieldPtr.Interface(), forRead)
+				if err != nil {
+					return
+				}
+				scanArgs = append(scanArgs, args...)
+				argsByStruct = append(argsByStruct, args)
+			}
+
+			// Scan row
+			if err := rows.Scan(scanArgs...); err != nil {
+				return
+			}
+
+			// Apply scanned values back to the structs
+			for i := range rowVal.NumField() {
+				field := rowVal.Field(i)
+
+				// If type of field is error
+				if field.Type().String() == "error" {
+					continue
+				}
+
+				// Apply scanned values
+				fieldPtr := rowVal.Field(i).Addr()
+				if err := query.ArgsAppay(fieldPtr.Interface(), argsByStruct[i]); err != nil {
+					return
+				}
+			}
+
+			// Yield row
+			if !yield(rowVal.Interface().(T)) {
+				break
+			}
 		}
 	}
 }
@@ -558,6 +653,8 @@ func listQuery[T any](q querier, previous int, orderBy string, numRows int,
 			wheres = append(wheres, v)
 		case query.Join:
 			attr.Joins = append(attr.Joins, v)
+		case string:
+			attr.Alias = v
 		}
 	}
 

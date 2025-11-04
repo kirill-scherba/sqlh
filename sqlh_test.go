@@ -66,6 +66,10 @@ func TestSQLOperations(t *testing.T) {
 		testTable2 := TestTable2{ID: 1, Value: 42}
 		err = Insert(db, testTable2)
 		require.NoError(t, err)
+		//
+		testTable2 = TestTable2{ID: 2, Value: 75}
+		err = Insert(db, testTable2)
+		require.NoError(t, err)
 	})
 
 	// 2. Test Update
@@ -115,19 +119,70 @@ func TestSQLOperations(t *testing.T) {
 			Data []byte `db:"data"`
 
 			// Test table 2 fields
-			ID2   int64 `db:"id"`
-			Value int64 `db:"value"`
+			// ID2   int64 `db:"id"`
+			// Value int64 `db:"value"`
 		}
 
 		// List all users
 		users, _, err := ListRows[testTable](db, 0, "name ASC", 100,
-			query.Join{Name: "TestTable2", On: "TestTable2.id = TestTable.id"})
+			"t",
+			query.Join{Name: "TestTable2", On: "t.id = o.id", Alias: "o"})
 		require.NoError(t, err)
 		// assert.Len(t, users, 2)
 
 		for _, user := range users {
 			t.Logf("user: %+v", user)
 		}
+	})
+
+	t.Run("Query with Joins", func(t *testing.T) {
+
+		// Make select attributes
+		attr := &query.SelectAttr{
+			// Where clauses
+			Wheres: []string{"t.name <> ''", "t.id > 0"},
+
+			// Alias of main table
+			Alias: "t",
+
+			// Joins with other tables
+			Joins: []query.Join{query.MakeJoin[TestTable2](query.Join{
+				Join:  "left",
+				Alias: "o",
+				On:    "t.id = o.id",
+			})},
+		}
+
+		// Make Select Query
+		selectQuery, err := query.Select[TestTable](attr)
+		if err != nil {
+			t.Fatalf("failed to make select query: %v", err)
+		}
+		t.Logf("selectQuery: %s", selectQuery)
+
+		// Struct with 2 tables to use with QueryRange as return from range
+		type structs struct {
+			// Err error
+			T1 *TestTable
+			T2 *TestTable2
+		}
+
+		// Get records in range and append to rows slice
+		var rows []structs
+		for s := range QueryRange[structs](db, selectQuery) {
+			t.Logf("Query row: %+v %+v", s.T1, s.T2)
+			// if s.Err != nil {
+			// 	t.Logf("QueryRange error: %v", s.Err)
+			// }
+			rows = append(rows, s)
+		}
+
+		// Check the slice
+		for _, row := range rows {
+			t.Logf("Query row: %+v %+v", row.T1, row.T2)
+		}
+
+		require.NoError(t, err)
 	})
 
 	// 6. Test list range with pointer
