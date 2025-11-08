@@ -10,6 +10,7 @@ package sqlh
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"iter"
 	"reflect"
 
@@ -425,6 +426,11 @@ func List[T any](db querier, previous int, orderBy string, listAttrs ...any) (
 func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 	listAttrs ...any) (rows []T, pagination int, err error) {
 
+	// Function to process errors on ListRange
+	listAttrs = append(listAttrs, func(e error) {
+		err = e
+	})
+
 	// Iterate over list records and append it to rows slice
 	for row := range ListRange[T](db, previous, orderBy, numRows, listAttrs...) {
 		rows = append(rows, row)
@@ -441,13 +447,27 @@ func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 func ListRange[T any](db querier, previous int, orderBy string, numRows int,
 	listAttrs ...any) iter.Seq[T] {
 
-	// Create and Execute select statement
-	sqlRows, err := listQuery[T](db, previous, orderBy, numRows, listAttrs...)
+	// Get func(error) from queryArgs and remove it from queryArgs if present
+	var errFunc = func() (errFunc func(error)) {
+		errFunc = func(error) {}
+		for i := range listAttrs {
+			switch v := listAttrs[i].(type) {
+			case func(error):
+				errFunc = v
+				listAttrs = append(listAttrs[:i], listAttrs[i+1:]...)
+				return
+			}
+		}
+		return
+	}()
 
 	// Return iterator
 	return func(yield func(T) bool) {
-		// Check listQuery error
+		// Create and Execute select statement
+		sqlRows, err := listQuery[T](db, previous, orderBy, numRows, listAttrs...)
 		if err != nil {
+			err = fmt.Errorf("failed to execute list query: %w", err)
+			errFunc(err)
 			return
 		}
 		defer sqlRows.Close()
@@ -461,18 +481,24 @@ func ListRange[T any](db querier, previous int, orderBy string, numRows int,
 			args, errArgs := query.Args(row, forRead)
 			if errArgs != nil {
 				// Stop iteration if Args fails
+				err = fmt.Errorf("failed to get arguments: %w", errArgs)
+				errFunc(err)
 				break
 			}
 
 			// Scan into row
 			if sqlRows.Scan(args...) != nil {
 				// Stop iteration if Scan fails
+				err = fmt.Errorf("failed to scan row: %w", sqlRows.Err())
+				errFunc(err)
 				break
 			}
 
 			// Apply scanned arguments to the row struct fields
-			if query.ArgsAppay(&row, args) != nil {
+			if err = query.ArgsAppay(&row, args); err != nil {
 				// Return if ArgsAppay fails
+				err = fmt.Errorf("failed to apply arguments: %w", err)
+				errFunc(err)
 				break
 			}
 
@@ -492,8 +518,24 @@ func ListRange[T any](db querier, previous int, orderBy string, numRows int,
 // when all the rows have been retrieved or when the yield function returns false.
 // The yielded value is a pointer to a struct of type T, and a new instance of
 // the struct is created for each yielded value.
-// The function will return an error if the query execution fails.
+//
+// To check for errors, add a function of type func(error) to the query
+// arguments (queryArgs parameter of this function). The range will stop on any
+// error returned by the function.
 func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Seq[T] {
+
+	// Get func(error) from queryArgs and remove it from queryArgs if present
+	var errFunc func(error) = func(error) {}
+	func() {
+		for i := range queryArgs {
+			switch v := queryArgs[i].(type) {
+			case func(error):
+				errFunc = v
+				queryArgs = append(queryArgs[:i], queryArgs[i+1:]...)
+				return
+			}
+		}
+	}()
 
 	// Return iterator
 	return func(yield func(row T) bool) {
@@ -501,6 +543,8 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 		// Execute query
 		rows, err := db.Query(selectQuery, queryArgs...)
 		if err != nil {
+			err = fmt.Errorf("failed to execute query: %w", err)
+			errFunc(err)
 			return
 		}
 		defer rows.Close()
@@ -518,11 +562,6 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 			// Prepare scan arguments for all fields in T
 			for i := range rowVal.NumField() {
 				field := rowVal.Field(i)
-
-				// If type of field is error
-				if field.Type().String() == "error" {
-					continue
-				}
 
 				// We need a pointer to the field to scan into it.
 				// If the field itself is a pointer, we create a new object for it.
@@ -543,6 +582,8 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 				// Get arguments
 				args, err := query.Args(fieldPtr.Interface(), forRead)
 				if err != nil {
+					err = fmt.Errorf("failed to get arguments for field %s: %w", field, err)
+					errFunc(err)
 					return
 				}
 				scanArgs = append(scanArgs, args...)
@@ -551,27 +592,27 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 
 			// Scan row
 			if err := rows.Scan(scanArgs...); err != nil {
+				err = fmt.Errorf("failed to scan row: %w", err)
+				errFunc(err)
 				return
 			}
 
 			// Apply scanned values back to the structs
 			for i := range rowVal.NumField() {
-				field := rowVal.Field(i)
-
-				// If type of field is error
-				if field.Type().String() == "error" {
-					continue
-				}
 
 				// Apply scanned values
 				fieldPtr := rowVal.Field(i).Addr()
 				if err := query.ArgsAppay(fieldPtr.Interface(), argsByStruct[i]); err != nil {
+					err = fmt.Errorf("failed to apply scanned values to field %s: %w", fieldPtr, err)
+					errFunc(err)
 					return
 				}
 			}
 
 			// Yield row
 			if !yield(rowVal.Interface().(T)) {
+				// Stop iteration if yield returns false (e.g., due to a 'break'
+				// in the range loop)
 				break
 			}
 		}
@@ -596,40 +637,6 @@ func makeRow[T any]() (row T) {
 	if rowType.Kind() == reflect.Pointer {
 		row = reflect.New(rowType.Elem()).Interface().(T)
 	}
-	return
-}
-
-// listRows is the internal implementation for ListRows that works with a querier.
-func listRows[T any](q querier, previous int, orderBy string, numRows int,
-	listAttrs ...any) (rows []T, pagination int, err error) {
-
-	// Create and Execute select statement
-	sqlRows, err := listQuery[T](q, previous, orderBy, numRows, listAttrs...)
-	if err != nil {
-		return
-	}
-	defer sqlRows.Close()
-
-	// Get rows
-	for sqlRows.Next() {
-		var row = makeRow[T]()
-		args, _ := query.Args(row, forRead)
-		if err = sqlRows.Scan(args...); err != nil {
-			return
-		}
-
-		// Apply scanned arguments to the row struct fields
-		err = query.ArgsAppay(&row, args)
-		if err != nil {
-			return // Return if ArgsAppay fails
-		}
-		rows = append(rows, row)
-	}
-	if err = sqlRows.Err(); err != nil {
-		return
-	}
-	pagination = previous + len(rows)
-
 	return
 }
 

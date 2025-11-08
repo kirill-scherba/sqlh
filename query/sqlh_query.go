@@ -48,6 +48,7 @@ type Join struct {
 	Alias  string   // Alias (optional)
 	On     string   // On clause
 	Fields []string // Fields
+	Select string   // Select clause (optional)
 }
 
 // MakeJoin takes a Join struct as input parameter and returns a Join struct with
@@ -142,8 +143,7 @@ func Table[T any]() (string, error) {
 
 		// Use db_key text only if field name is "_"
 		if fieldName == "_" {
-			dbFields = append(
-				dbFields,
+			dbFields = append(dbFields,
 				strings.TrimRight(field.Tag.Get("db_key"), " "),
 			)
 			continue
@@ -253,7 +253,19 @@ func Select[T any](attr *SelectAttr) (string, error) {
 
 		// Joins
 		for _, join := range attr.Joins {
-			joins = joins + " " + join.Join + " join " + join.Name + " " + join.Alias + " on " + join.On
+
+			// Make join table
+			table := join.Name
+			if len(join.Select) > 0 {
+				table = "(" + join.Select + ")"
+			}
+
+			// Add join
+			joins = joins + " " +
+				strings.TrimSpace(join.Join+" join") + " " + table + " " +
+				join.Alias + " on " + join.On
+
+			// Add join fields
 			joinsFields = append(joinsFields, join.Fields...)
 		}
 
@@ -400,12 +412,12 @@ func Args(row any, forWrite bool) ([]any, error) {
 		field := rowType.Field(i)
 
 		// For write operations, skip autoincrement fields.
-		if forWrite && strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "autoincrement") {
+		if forWrite && isAutoIncrement(field) {
 			continue
 		}
 
-		// Always skip fields tagged with db:"-"
-		if field.Tag.Get("db") == "-" {
+		// Always skip fields tagged with db:"-" or has name "_"
+		if field.Tag.Get("db") == "-" || field.Name == "_" {
 			continue
 		}
 
@@ -420,6 +432,14 @@ func Args(row any, forWrite bool) ([]any, error) {
 	}
 
 	return args, nil
+}
+
+// isAutoIncrement returns true if the given struct field is tagged with
+// "autoincrement" or "AUTO_INCREMENT". It is used to skip autoincrement fields
+// in INSERT and UPDATE operations.
+func isAutoIncrement(field reflect.StructField) bool {
+	return strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "autoincrement") ||
+		strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "AUTO_INCREMENT")
 }
 
 // ArgsAppay sets fields values of the given pointer to struct row from the args
@@ -443,7 +463,7 @@ func ArgsAppay(row any, args []any) (err error) {
 	for i := range rowVal.NumField() {
 
 		// Skip not db fields tagged with "-"
-		if rowType.Field(i).Tag.Get("db") == "-" {
+		if rowType.Field(i).Tag.Get("db") == "-" || rowType.Field(i).Name == "_" {
 			continue
 		}
 
@@ -495,15 +515,23 @@ func ArgsAppay(row any, args []any) (err error) {
 			f.SetComplex(v)
 
 		case []byte:
+			switch {
 			// Ensure the target field f in the struct is also []byte
-			if f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.Uint8 {
+			case f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.Uint8:
 				f.SetBytes(v)
-			} else {
-				err = fmt.Errorf(
-					"type mismatch for field %s: expected []byte for DB type []byte, but struct field is %s",
+
+			// If the target field is a string, convert []byte to string
+			case f.Kind() == reflect.String:
+				rawString := string(v)
+				f.SetString(rawString)
+
+			// Return an error in other cases
+			default:
+				err = fmt.Errorf("type mismatch for field %s: "+
+					"expected []byte for DB type []byte, but struct field is %s",
 					rowType.Field(i).Name, f.Type().String(),
 				)
-				return // Return error immediately
+				return
 			}
 
 		default:
@@ -617,14 +645,13 @@ func fields[T any](alls ...bool) (fields []string) {
 		field := t.Field(i)
 
 		// Skip autoincrement fields if all is false
-		if !all && strings.Contains(strings.ToLower(field.Tag.Get("db_key")),
-			"autoincrement") {
+		if !all && isAutoIncrement(field) {
 			continue
 		}
 
 		// If the field name is not empty and the db tag is not set to "-"
 		// add the field name to the slice
-		if fieldName, ok := getFieldName(field); ok {
+		if fieldName, ok := getFieldName(field); ok && fieldName != "_" {
 			fields = append(fields, fieldName)
 		}
 	}

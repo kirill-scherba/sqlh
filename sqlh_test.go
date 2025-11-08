@@ -161,39 +161,80 @@ func TestSQLOperations(t *testing.T) {
 		t.Logf("selectQuery: %s", selectQuery)
 
 		// Struct with 2 tables to use with QueryRange as return from range
-		type structs struct {
-			// Err error
-			T1 *TestTable
-			T2 *TestTable2
+		type result struct {
+			*TestTable
+			*TestTable2
 		}
 
 		// Get records in range and append to rows slice
-		var rows []structs
-		for s := range QueryRange[structs](db, selectQuery) {
-			t.Logf("Query row: %+v %+v", s.T1, s.T2)
-			// if s.Err != nil {
-			// 	t.Logf("QueryRange error: %v", s.Err)
-			// }
+		var rows []result
+		for s := range QueryRange[result](db, selectQuery, func(errQueryRange error) {
+			t.Logf("QueryRange error: %v", errQueryRange)
+			err = errQueryRange
+		}) {
+			t.Logf("Query row: %+v %+v", s.TestTable, s.TestTable2)
 			rows = append(rows, s)
 		}
 
 		// Check the slice
 		for _, row := range rows {
-			t.Logf("Query row: %+v %+v", row.T1, row.T2)
+			t.Logf("Query row: %+v %+v", row.TestTable, row.TestTable2)
 		}
 
 		require.NoError(t, err)
 	})
 
+	t.Run("Query with Joins Select ", func(t *testing.T) {
+		// To create query with join with select add Join attributes with
+		// Select and Fields
+		attr := &query.SelectAttr{
+			// Alias of main table
+			Alias: "t",
+
+			// Joins with select
+			Joins: []query.Join{{
+				Join:   "left",
+				Alias:  "o",
+				Select: "select id, value from TestTable2",
+				Fields: []string{"o.id", "o.value"},
+				On:     "t.id = o.id",
+			}},
+		}
+
+		// Make Select Query
+		selectQuery, err := query.Select[TestTable](attr)
+		if err != nil {
+			t.Fatalf("failed to make select query: %v", err)
+		}
+		t.Logf("selectQuery: %s", selectQuery)
+
+		// Execute query range
+		for s := range QueryRange[struct {
+			*TestTable
+			*TestTable2
+		}](db, selectQuery, func(errQueryRange error) {
+			t.Logf("QueryRange error: %v", errQueryRange)
+			err = errQueryRange
+			require.NoError(t, err)
+		}) {
+			t.Logf("Query row: %+v %+v", s.TestTable, s.TestTable2)
+		}
+
+	})
+
 	// 6. Test list range with pointer
 	t.Run("ListRange", func(t *testing.T) {
 		// List with where clause
-		for row := range ListRange[TestTable](db, 0, "name ASC", 0, Where{"name=", "Bob"}) {
+		for row := range ListRange[TestTable](db, 0, "name ASC", 0, Where{"name=", "Bob"}, func(e error) {
+			assert.NoError(t, e)
+		}) {
 			assert.Equal(t, "Bob", row.Name)
 		}
 
 		// List with where clause
-		for row := range ListRange[TestTable](db, 0, "name ASC", 0, Where{"name=", "Alice"}) {
+		for row := range ListRange[TestTable](db, 0, "name ASC", 0, Where{"name=", "Alice"}, func(e error) {
+			assert.NoError(t, e)
+		}) {
 			assert.Equal(t, "Alice", row.Name)
 		}
 	})
