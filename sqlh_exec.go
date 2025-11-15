@@ -427,9 +427,10 @@ func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 	listAttrs ...any) (rows []T, pagination int, err error) {
 
 	// Function to process errors on ListRange
-	listAttrs = append(listAttrs, func(e error) {
-		err = e
-	})
+	listAttrs = append(listAttrs, func(e error) { err = e })
+
+	// Prepare rows slice
+	rows = make([]T, 0, numRows)
 
 	// Iterate over list records and append it to rows slice
 	for row := range ListRange[T](db, previous, orderBy, numRows, listAttrs...) {
@@ -444,7 +445,7 @@ func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 // It takes a list of Where condition as input parameter.
 // The function executes SELECT statement with the given where conditions.
 // If the rows are found, the function returns an iterator for the rows and nil as error.
-func ListRange[T any](db querier, previous int, orderBy string, numRows int,
+func ListRangeOld[T any](db querier, previous int, orderBy string, numRows int,
 	listAttrs ...any) iter.Seq[T] {
 
 	// Get func(error) from queryArgs and remove it from queryArgs if present
@@ -509,6 +510,61 @@ func ListRange[T any](db querier, previous int, orderBy string, numRows int,
 				break
 			}
 		}
+
+		// Check for errors in rows.Next
+		if err = sqlRows.Err(); err != nil {
+			// err = fmt.Errorf("failed to iterate rows: %w", err)
+			errFunc(err)
+		}
+	}
+}
+
+// ListRange returns an iterator over the rows in the database. It takes a
+// querier, a previous number of rows, order by string, number of rows to retrieve,
+// and a variadic list of where conditions to filter the rows.
+// The returned iterator yields each row in the database, and will stop yielding
+// when all the rows have been retrieved or when the yield function returns false.
+// The yielded value is a pointer to a struct of type T, and a new instance of
+// the struct is created for each yielded value.
+// To check for errors, add a function of type func(error) to the query
+// arguments (listAttrs parameter of this function). The range will stop on any
+// error returned by the function.
+func ListRange[T any](db querier, previous int, orderBy string, numRows int,
+	listAttrs ...any) iter.Seq[T] {
+
+	// Get func(error) from queryArgs and remove it from queryArgs if present
+	var errFunc = func() (errFunc func(error)) {
+		errFunc = func(error) {}
+		for i := range listAttrs {
+			switch v := listAttrs[i].(type) {
+			case func(error):
+				errFunc = v
+				listAttrs = append(listAttrs[:i], listAttrs[i+1:]...)
+				return
+			}
+		}
+		return
+	}()
+
+	// Return iterator
+	return func(yield func(row T) bool) {
+
+		// Create select statement and get select arguments
+		listStmt, selectArgs, err := listStatement[T](previous, orderBy, numRows, listAttrs...)
+		if err != nil {
+			errFunc(err)
+			return
+		}
+
+		// Add error function to select arguments
+		selectArgs = append(selectArgs, errFunc)
+
+		// Iterate over rows
+		for row := range QueryRange[struct{ In T }](db, listStmt, selectArgs...) {
+			if !yield(row.In) {
+				break
+			}
+		}
 	}
 }
 
@@ -541,19 +597,20 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 	return func(yield func(row T) bool) {
 
 		// Execute query
-		rows, err := db.Query(selectQuery, queryArgs...)
+		sqlRows, err := db.Query(selectQuery, queryArgs...)
 		if err != nil {
 			err = fmt.Errorf("failed to execute query: %w", err)
 			errFunc(err)
 			return
 		}
-		defer rows.Close()
+		defer sqlRows.Close()
 
 		var yieldArg T
 		yieldValue := reflect.ValueOf(&yieldArg).Elem()
 		rowVal := reflect.New(yieldValue.Type()).Elem()
 
-		for rows.Next() {
+		// Iterate over rows
+		for sqlRows.Next() {
 			// Create a new instance of the yield argument struct for each row.
 			// This ensures that each yielded value is a distinct entity.
 			scanArgs := make([]any, 0, rowVal.NumField())
@@ -591,7 +648,7 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 			}
 
 			// Scan row
-			if err := rows.Scan(scanArgs...); err != nil {
+			if err := sqlRows.Scan(scanArgs...); err != nil {
 				err = fmt.Errorf("failed to scan row: %w", err)
 				errFunc(err)
 				return
@@ -615,6 +672,12 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 				// in the range loop)
 				break
 			}
+		}
+
+		// Check for errors in rows.Next
+		if err := sqlRows.Err(); err != nil {
+			// err = fmt.Errorf("failed to iterate rows: %w", err)
+			errFunc(err)
 		}
 	}
 }
@@ -649,8 +712,29 @@ func makeRow[T any]() (row T) {
 func listQuery[T any](q querier, previous int, orderBy string, numRows int,
 	listAttrs ...any) (sqlRows *sql.Rows, err error) {
 
+	// Create select statement
+	selectStmt, selectArgs, err := listStatement[T](previous, orderBy, numRows, listAttrs...)
+	if err != nil {
+		return
+	}
+
+	// Execute select statement
+	sqlRows, err = q.Query(selectStmt, selectArgs...)
+	return
+}
+
+// listStatement creates a SELECT statement for the given type T.
+//
+// It takes a previous number of rows, order by string, number of rows to retrieve,
+// and a variadic list of where conditions to filter the rows.
+// The function returns a pointer to the SELECT statement and a slice of arguments
+// for the WHERE conditions, and an error if encountered.
+// The returned pointer to the SELECT statement contains the rows retrieved from the database.
+// The error is returned if the query execution fails.
+func listStatement[T any](previous int, orderBy string, numRows int,
+	listAttrs ...any) (selectStmt string, selectArgs []any, err error) {
+
 	var attr = &query.SelectAttr{}
-	var selectArgs []any
 	var wheres []Where
 
 	// Parse list attributes
@@ -685,9 +769,6 @@ func listQuery[T any](q querier, previous int, orderBy string, numRows int,
 	}
 
 	// Create select statement
-	selectStmt, _ := query.Select[T](attr)
-
-	// Execute select statement
-	sqlRows, err = q.Query(selectStmt, selectArgs...)
+	selectStmt, err = query.Select[T](attr)
 	return
 }

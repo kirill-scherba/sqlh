@@ -3,8 +3,10 @@ package sqlh
 import (
 	"bytes"
 	"database/sql"
+	"fmt"
 	"os/exec"
 	"testing"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/kirill-scherba/sqlh/query"
@@ -12,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Start MySQL server:
-//   docker run --rm --name mysql -e MYSQL_ROOT_PASSWORD=password -p 3306:3306 -d mysql
+// Start MySQL server with docker:
+//   docker run --rm --name mysql_test -e MYSQL_ROOT_PASSWORD=password -p 3306:3306 -d mysql
 
 type TestMySQLTable struct {
 	ID   int64  `db:"id" db_key:"not null primary key AUTO_INCREMENT"`
@@ -30,7 +32,7 @@ type TestMySQLTable2 struct {
 
 func startMySQLContainer(t *testing.T) {
 	// Check if the container with the name 'mysql' is running
-	checkCmd := exec.Command("docker", "ps", "-q", "-f", "name=mysql")
+	checkCmd := exec.Command("docker", "ps", "-q", "-f", "name=mysql_test")
 	var out bytes.Buffer
 	checkCmd.Stdout = &out
 	err := checkCmd.Run()
@@ -42,24 +44,36 @@ func startMySQLContainer(t *testing.T) {
 		t.Log("Container 'mysql' is already running.")
 	} else {
 		t.Log("Container 'mysql' is not running. Starting...")
-		runCmd := exec.Command("docker", "run", "--rm", "--name", "mysql", "-e", "MYSQL_ROOT_PASSWORD=password", "-p", "3306:3306", "-d", "mysql")
+		runCmd := exec.Command("docker", "run", "--rm", "--name", "mysql_test", "-e", "MYSQL_ROOT_PASSWORD=password", "-p", "3306:3306", "-d", "mysql")
 		err := runCmd.Run()
 		if err != nil {
 			t.Fatalf("Failed to start MySQL container: %v", err)
 		}
+		// t.Log("MySQL container starting...")
+		// time.Sleep(60 * time.Second)
 	}
 }
 
-func newMySQLDB(driverName, dataSourceName string) (*sql.DB, error) {
-	db, err := sql.Open(driverName, dataSourceName)
+func newMySQLDB(driverName, dataSourceName string) (db *sql.DB, err error) {
+
+	db, err = sql.Open(driverName, dataSourceName)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create database
-	_, err = db.Exec("CREATE DATABASE IF NOT EXISTS test")
-	if err != nil {
-		return nil, err
+	for {
+		_, err = db.Exec("CREATE DATABASE IF NOT EXISTS test")
+		if err != nil {
+			if err.Error() == "invalid connection" {
+				// Wait for MySQL server to start
+				fmt.Println("Waiting 5 seconds for MySQL server to start...")
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			return nil, err
+		}
+		break
 	}
 
 	// Execute the USE command to select the database
@@ -96,7 +110,7 @@ func TestMySQL(t *testing.T) {
 	startMySQLContainer(t)
 
 	// Create test mysql database
-	db, err := newMySQLDB("mysql", "root:password@tcp(localhost:3306)/")
+	db, err := newMySQLDB("mysql", "root:password@tcp(localhost:3306)/mysql")
 	if err != nil {
 		t.Fatalf("Error creating test database: %v", err)
 	}

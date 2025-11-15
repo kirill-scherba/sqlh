@@ -6,6 +6,7 @@ package sqlh
 
 import (
 	"database/sql"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,6 +46,44 @@ func TestSQLOperations(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec(createStmt)
 	require.NoError(t, err, "failed to create table")
+
+	// Test select and get from empty table
+	t.Run("Select and Get from Empty table", func(t *testing.T) {
+
+		usersStmt, err := query.Select[TestTable](nil)
+		require.NoError(t, err)
+
+		sqlRows, err := db.Query(usersStmt)
+		require.NoError(t, err)
+
+		for sqlRows.Next() {
+			var user TestTable
+			err := sqlRows.Scan(&user.ID, &user.Name, &user.Data)
+			require.NoError(t, err)
+		}
+		require.NoError(t, sqlRows.Err())
+
+		// Empty rows from ListRows returns empty array in JSON
+		rows, _, err := ListRows[TestTable](db, 0, "name ASC", 0)
+		require.NoError(t, err)
+		rowsJson, err := json.Marshal(rows)
+		require.NoError(t, err)
+		t.Logf("rows: %s", rowsJson)
+		require.Equal(t, string(rowsJson), "[]")
+
+		// An empty array returns null in JSON
+		var emptyArr []TestTable
+		rowsJson, err = json.Marshal(emptyArr)
+		require.NoError(t, err)
+		t.Logf("rows: %s", rowsJson)
+		require.Equal(t, string(rowsJson), "null")
+
+		// Check Get with empty result, it should return nil and sql.ErrNoRows
+		retrievedUser, err := Get[TestTable](db, Where{"name=", "Alice"})
+		require.Error(t, err)
+		require.Equal(t, err, sql.ErrNoRows)
+		require.Nil(t, retrievedUser)
+	})
 
 	// 1. Test Insert with autoincrement
 	t.Run("Insert and Verify Autoincrement", func(t *testing.T) {

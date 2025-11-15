@@ -242,6 +242,7 @@ func Select[T any](attr *SelectAttr) (string, error) {
 	var limit string
 	var orderby string
 	var name = Name[T]()
+	var fields = fields[T](true)
 
 	// Check attributes
 	if attr != nil {
@@ -298,17 +299,16 @@ func Select[T any](attr *SelectAttr) (string, error) {
 				limit = fmt.Sprintf(" OFFSET %d", attr.Paginator.Offset)
 			}
 		}
-	}
 
-	// Make fields
-	fields := fields[T](true)
-	if len(attr.Alias) > 0 {
-		for i := range fields {
-			fields[i] = attr.Alias + "." + fields[i]
+		// Make fields
+		if len(attr.Alias) > 0 {
+			for i := range fields {
+				fields[i] = attr.Alias + "." + fields[i]
+			}
 		}
+		// Append joins fields
+		fields = append(fields, joinsFields...)
 	}
-	// Append joins fields
-	fields = append(fields, joinsFields...)
 
 	// Make select fields string
 	fieldsStr := strings.Join(fields, ", ")
@@ -487,27 +487,35 @@ func ArgsAppay(row any, args []any) (err error) {
 		case float32:
 			f.SetFloat(float64(v))
 
-		case int:
-			f.SetInt(int64(v))
-		case int8:
-			f.SetInt(int64(v))
-		case int16:
-			f.SetInt(int64(v))
-		case int32:
-			f.SetInt(int64(v))
+		// case int:
+		// 	f.SetInt(int64(v))
+		// case int8:
+		// 	f.SetInt(int64(v))
+		// case int16:
+		// 	f.SetInt(int64(v))
+		// case int32:
+		// 	f.SetInt(int64(v))
 		case int64:
-			f.SetInt(v)
+			// Set the field value based on the type of the field
+			switch f.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				f.SetInt(v)
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				f.SetUint(uint64(v))
+			case reflect.Bool:
+				f.SetBool(v == 1)
+			}
 
-		case uint:
-			f.SetUint(uint64(v))
-		case uint8:
-			f.SetUint(uint64(v))
-		case uint16:
-			f.SetUint(uint64(v))
-		case uint32:
-			f.SetUint(uint64(v))
-		case uint64:
-			f.SetUint(v)
+		// case uint:
+		// 	f.SetUint(uint64(v))
+		// case uint8:
+		// 	f.SetUint(uint64(v))
+		// case uint16:
+		// 	f.SetUint(uint64(v))
+		// case uint32:
+		// 	f.SetUint(uint64(v))
+		// case uint64:
+		// 	f.SetUint(v)
 
 		case complex64:
 			f.SetComplex(complex128(v))
