@@ -264,14 +264,16 @@ func TestSQLOperations(t *testing.T) {
 	// 6. Test list range with pointer
 	t.Run("ListRange", func(t *testing.T) {
 		// List with where clause
-		for row := range ListRange[TestTable](db, 0, "name ASC", 0, Where{"name=", "Bob"}, func(e error) {
-			assert.NoError(t, e)
-		}) {
+		for _, row := range ListRange[TestTable](db, 0, "name ASC", 0,
+			Where{"name=", "Bob"}, func(e error) {
+				assert.NoError(t, e)
+			}) {
 			assert.Equal(t, "Bob", row.Name)
 		}
 
 		// List with where clause
-		for row := range ListRange[TestTable](db, 0, "name ASC", 0, Where{"name=", "Alice"}, func(e error) {
+		for _, row := range ListRange[TestTable](db, 0, "name ASC", 0, 
+		Where{"name=", "Alice"}, func(e error) {
 			assert.NoError(t, e)
 		}) {
 			assert.Equal(t, "Alice", row.Name)

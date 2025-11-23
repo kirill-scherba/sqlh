@@ -19,6 +19,10 @@ var (
 	ErrWhereClauseRequiredForUpdate = fmt.Errorf("where clause should be set in the Update statement")
 )
 
+// numRows is default number of rows to get in select query. By default, it is 10.
+// It can be set by SetNumRows function, and get by GetNumRows function.
+var numRows = 10
+
 // SelectAttr defines attributes for SELECT statement.
 type SelectAttr struct {
 	// Offset and limit (optional). Example: "0, 10"
@@ -26,6 +30,9 @@ type SelectAttr struct {
 
 	// Where clauses (optional). Example: "id = ?", "name = ?" joined with " and "
 	Wheres []string
+
+	// Join wheres by "or" if true
+	WheresJoinOr bool
 
 	// Order by (optional). Example: "id desc, name asc"
 	OrderBy string
@@ -92,6 +99,21 @@ type Paginator struct {
 
 	// Number of rows to get. If 0, all rows will be returned.
 	Limit int
+}
+
+// SetNumRows sets default number of rows returned by List function. By default,
+// it is 10.
+func SetNumRows(n int) {
+	if n <= 1 {
+		return
+	}
+	numRows = n
+}
+
+// GetNumRows returns default number of rows. It may be set by SetNumRows. By
+// default, it is 10.
+func GetNumRows() int {
+	return numRows
 }
 
 // Table returns a SQL CREATE TABLE statement for the given struct type.
@@ -272,11 +294,16 @@ func Select[T any](attr *SelectAttr) (string, error) {
 
 		// Where clauses
 		if len(attr.Wheres) > 0 {
-			where = strings.Join(attr.Wheres, " and ")
+			// Join wheres by "and" or "or"
+			var sep = " and "
+			if attr.WheresJoinOr {
+				sep = " or "
+			}
+			where = " where " + strings.Join(attr.Wheres, sep)
 		}
-		if len(where) > 0 {
-			where = fmt.Sprintf(" where %s", where)
-		}
+		// if len(where) > 0 {
+		// 	where = fmt.Sprintf(" where %s", where)
+		// }
 
 		// Order by
 		if len(attr.OrderBy) > 0 {
@@ -286,17 +313,19 @@ func Select[T any](attr *SelectAttr) (string, error) {
 		// Offset and limit
 		if attr.Paginator != nil {
 			switch {
-			// No limit and offset
+			// No limit and offset - get all rows
 			case attr.Paginator.Limit <= 0 && attr.Paginator.Offset <= 0:
 
-			// Limit is set
-			case attr.Paginator.Limit > 0:
-				limit = fmt.Sprintf(" LIMIT %d OFFSET %d",
-					attr.Paginator.Limit, attr.Paginator.Offset)
-
-			// Limit is not set - get all rows
+			// Set limit and offset in request. If limit is not set, set it to
 			default:
-				limit = fmt.Sprintf(" OFFSET %d", attr.Paginator.Offset)
+				// sqlh.SetNumRows(1)
+				// limit = fmt.Sprintf(" OFFSET %d", attr.Paginator.Offset)
+				n := numRows
+				if attr.Paginator.Limit > 0 {
+					n = attr.Paginator.Limit
+				}
+				limit = fmt.Sprintf(" LIMIT %d OFFSET %d",
+					n, attr.Paginator.Offset)
 			}
 		}
 

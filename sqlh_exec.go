@@ -17,8 +17,6 @@ import (
 	"github.com/kirill-scherba/sqlh/query"
 )
 
-var numRows = 10 // number of rows to get in select query
-
 // querier is an interface for sql.DB and sql.Tx
 type querier interface {
 	Query(query string, args ...any) (*sql.Rows, error)
@@ -68,9 +66,34 @@ type Where struct {
 	Value any
 }
 
-// SetNumRows sets numer of rows in List function.
+// WheresJoinOr is a type for query.Args function to join wheres with OR
+type WheresJoinOr bool
+
+// SetWheresJoinOr returns a WheresJoinOr type set to true.
+// It's used to join wheres conditions with OR instead of AND.
+// It's used in the List function.
+func SetWheresJoinOr() WheresJoinOr {
+	return WheresJoinOr(true)
+}
+
+// SetWheresJoinAnd returns a WheresJoinOr type set to false.
+// It's used to join wheres conditions with AND instead of OR.
+// It's used in the List function.
+// The join wheres conditions with AND is the default behavior.
+func SetWheresJoinAnd() WheresJoinOr {
+	return WheresJoinOr(false)
+}
+
+// SetNumRows sets numer of rows in List function. It may be get by GetNumRows.
+// By default, it is 10.
 func SetNumRows(n int) {
-	numRows = n
+	query.SetNumRows(n)
+}
+
+// GetNumRows returns default number of rows. It may be set by SetNumRows. By
+// default, it is 10.
+func GetNumRows() int {
+	return query.GetNumRows()
 }
 
 // Insert inserts rows into the T database table.
@@ -414,12 +437,14 @@ func Count[T any](db *sql.DB, wheres ...Where) (count int, err error) {
 // The function executes SELECT statement with the given where conditions.
 // If the rows are found, the function returns the rows and nil as error.
 // If the rows are not found, the function returns a default value for rows and
-// an error with message "not found".
+// an error with message "not found". It returns number of rows limited to
+// numRows. The default value for numRows is 10. The numRows may be set by
+// SetNumRows and get by GetNumRows functions.
 func List[T any](db querier, previous int, orderBy string, listAttrs ...any) (
 	rows []T, pagination int, err error) {
 
 	// Call ListRows function with default number of rows
-	return ListRows[T](db, previous, orderBy, numRows, listAttrs...)
+	return ListRows[T](db, previous, orderBy, query.GetNumRows(), listAttrs...)
 }
 
 // ListRows remains the public API, calling listRows with the *sql.DB
@@ -433,9 +458,12 @@ func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 	rows = make([]T, 0, numRows)
 
 	// Iterate over list records and append it to rows slice
-	for row := range ListRange[T](db, previous, orderBy, numRows, listAttrs...) {
+	for _, row := range ListRange[T](db, previous, orderBy, numRows, listAttrs...) {
 		rows = append(rows, row)
 	}
+
+	// Calculate result pagination
+	pagination = previous + len(rows)
 
 	return
 }
@@ -444,7 +472,9 @@ func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 // The iterator yields elements of type T until the end of the result set is reached.
 // It takes a list of Where condition as input parameter.
 // The function executes SELECT statement with the given where conditions.
+//
 // If the rows are found, the function returns an iterator for the rows and nil as error.
+// Deprecated: use ListRange
 func ListRangeOld[T any](db querier, previous int, orderBy string, numRows int,
 	listAttrs ...any) iter.Seq[T] {
 
@@ -529,8 +559,8 @@ func ListRangeOld[T any](db querier, previous int, orderBy string, numRows int,
 // To check for errors, add a function of type func(error) to the query
 // arguments (listAttrs parameter of this function). The range will stop on any
 // error returned by the function.
-func ListRange[T any](db querier, previous int, orderBy string, numRows int,
-	listAttrs ...any) iter.Seq[T] {
+func ListRange[T any](db querier, offset int, orderBy string, limit int,
+	listAttrs ...any) iter.Seq2[int, T] {
 
 	// Get func(error) from queryArgs and remove it from queryArgs if present
 	var errFunc = func() (errFunc func(error)) {
@@ -547,10 +577,10 @@ func ListRange[T any](db querier, previous int, orderBy string, numRows int,
 	}()
 
 	// Return iterator
-	return func(yield func(row T) bool) {
+	return func(yield func(i int, row T) bool) {
 
 		// Create select statement and get select arguments
-		listStmt, selectArgs, err := listStatement[T](previous, orderBy, numRows, listAttrs...)
+		listStmt, selectArgs, err := listStatement[T](offset, orderBy, limit, listAttrs...)
 		if err != nil {
 			errFunc(err)
 			return
@@ -560,10 +590,12 @@ func ListRange[T any](db querier, previous int, orderBy string, numRows int,
 		selectArgs = append(selectArgs, errFunc)
 
 		// Iterate over rows
+		var i = offset
 		for row := range QueryRange[struct{ In T }](db, listStmt, selectArgs...) {
-			if !yield(row.In) {
+			if !yield(i, row.In) {
 				break
 			}
+			i++
 		}
 	}
 }
@@ -742,6 +774,8 @@ func listStatement[T any](previous int, orderBy string, numRows int,
 		switch v := listAttr.(type) {
 		case Where:
 			wheres = append(wheres, v)
+		case WheresJoinOr:
+			attr.WheresJoinOr = bool(v)
 		case query.Join:
 			attr.Joins = append(attr.Joins, v)
 		case string:
