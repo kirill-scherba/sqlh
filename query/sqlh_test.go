@@ -120,8 +120,8 @@ func TestSelect(t *testing.T) {
 	t.Run("TestSelect", func(t *testing.T) {
 
 		attr := &SelectAttr{
-			Wheres: []string{"name = ?", "cost > ?"},
-			// Alias:  "t",
+			Wheres: []string{"t.name = ?", "t.cost > ?"},
+			Alias:  "t",
 		}
 
 		selectQuery, err = Select[SomeTable](attr)
@@ -129,6 +129,11 @@ func TestSelect(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Log(selectQuery)
+
+		// Check query
+		if selectQuery != "SELECT t.name, t.cost, t.age, t.time FROM sometable t WHERE t.name = ? AND t.cost > ?;" {
+			t.Fatal("Invalid query")
+		}
 	})
 
 	t.Run("TestSelectExecute", func(t *testing.T) {

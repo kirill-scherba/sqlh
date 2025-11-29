@@ -43,9 +43,13 @@ type SelectAttr struct {
 	// Joins (optional). List of joins to other tables used in select
 	Joins []Join
 
+	// Distinct (optional). If true, the SELECT statement will use the DISTINCT
+	// keyword
+	Distinct bool
+
 	// Name (optional) replaces the table name. By default, the table name is
 	// taken from the structure type specified when calling the Select function.
-	Name string
+	Name *string
 }
 
 // Join defines attributes for JOIN statement.
@@ -263,11 +267,22 @@ func Select[T any](attr *SelectAttr) (string, error) {
 	var where string
 	var limit string
 	var orderby string
+	var distinct string
 	var name = Name[T]()
 	var fields = fields[T](true)
 
 	// Check attributes
 	if attr != nil {
+
+		// Table Name (optional if attr.Name is set)
+		if attr.Name != nil && len(*attr.Name) > 0 {
+			name = *attr.Name
+		}
+
+		// Distinct
+		if attr.Distinct {
+			distinct = "DISTINCT "
+		}
 
 		// Alias
 		if len(attr.Alias) > 0 {
@@ -295,15 +310,12 @@ func Select[T any](attr *SelectAttr) (string, error) {
 		// Where clauses
 		if len(attr.Wheres) > 0 {
 			// Join wheres by "and" or "or"
-			var sep = " and "
+			var sep = " AND "
 			if attr.WheresJoinOr {
-				sep = " or "
+				sep = " OR "
 			}
-			where = " where " + strings.Join(attr.Wheres, sep)
+			where = " WHERE " + strings.Join(attr.Wheres, sep)
 		}
-		// if len(where) > 0 {
-		// 	where = fmt.Sprintf(" where %s", where)
-		// }
 
 		// Order by
 		if len(attr.OrderBy) > 0 {
@@ -335,16 +347,17 @@ func Select[T any](attr *SelectAttr) (string, error) {
 				fields[i] = attr.Alias + "." + fields[i]
 			}
 		}
+
 		// Append joins fields
 		fields = append(fields, joinsFields...)
 	}
 
 	// Make select fields string
 	fieldsStr := strings.Join(fields, ", ")
-	// fieldsStr = "*"
 
 	// Return the complete SELECT statement
-	return fmt.Sprintf("SELECT %s from %s%s%s%s%s;",
+	return fmt.Sprintf("SELECT %s%s FROM %s%s%s%s%s;",
+		distinct,
 		fieldsStr,
 		name,
 		joins,

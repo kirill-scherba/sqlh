@@ -5,9 +5,11 @@
 package sqlh
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -130,7 +132,7 @@ func TestSQLOperations(t *testing.T) {
 	})
 
 	// 3. Test List
-	t.Run("List", func(t *testing.T) {
+	t.Run("List and List with context", func(t *testing.T) {
 		// Insert another user to have multiple rows
 		user2 := TestTable{Name: "Bob", Data: []byte("data2")}
 		err := Insert(db, &user2)
@@ -146,6 +148,20 @@ func TestSQLOperations(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, bobs, 1)
 		assert.Equal(t, "Bob", bobs[0].Name)
+
+		// List with context to check 1 microsecond timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Microsecond)
+		defer cancel()
+		users, _, err = ListRows[TestTable](db, 0, "name ASC", 100, ctx)
+		require.Error(t, err)
+		assert.Equal(t, ctx.Err(), context.DeadlineExceeded)
+
+		// List with context to check cancel
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		cancel2()
+		users, _, err = ListRows[TestTable](db, 0, "name ASC", 100, ctx2)
+		require.Error(t, err)
+		assert.Equal(t, ctx2.Err(), context.Canceled)
 	})
 
 	t.Run("List with Joins", func(t *testing.T) {
@@ -164,7 +180,7 @@ func TestSQLOperations(t *testing.T) {
 
 		// List all users
 		users, _, err := ListRows[testTable](db, 0, "name ASC", 100,
-			"t",
+			SetAlias("t"),
 			query.Join{Name: "TestTable2", On: "t.id = o.id", Alias: "o"})
 		require.NoError(t, err)
 		// assert.Len(t, users, 2)
@@ -272,10 +288,10 @@ func TestSQLOperations(t *testing.T) {
 		}
 
 		// List with where clause
-		for _, row := range ListRange[TestTable](db, 0, "name ASC", 0, 
-		Where{"name=", "Alice"}, func(e error) {
-			assert.NoError(t, e)
-		}) {
+		for _, row := range ListRange[TestTable](db, 0, "name ASC", 0,
+			Where{"name=", "Alice"}, func(e error) {
+				assert.NoError(t, e)
+			}) {
 			assert.Equal(t, "Alice", row.Name)
 		}
 	})
