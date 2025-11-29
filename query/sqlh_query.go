@@ -1,4 +1,4 @@
-// Copyright 2024 Kirill Scherba <kirill@scherba.ru>. All rights reserved.
+// Copyright 2024-2025 Kirill Scherba <kirill@scherba.ru>. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -529,14 +529,6 @@ func ArgsAppay(row any, args []any) (err error) {
 		case float32:
 			f.SetFloat(float64(v))
 
-		// case int:
-		// 	f.SetInt(int64(v))
-		// case int8:
-		// 	f.SetInt(int64(v))
-		// case int16:
-		// 	f.SetInt(int64(v))
-		// case int32:
-		// 	f.SetInt(int64(v))
 		case int64:
 			// Set the field value based on the type of the field
 			switch f.Kind() {
@@ -547,17 +539,6 @@ func ArgsAppay(row any, args []any) (err error) {
 			case reflect.Bool:
 				f.SetBool(v == 1)
 			}
-
-		// case uint:
-		// 	f.SetUint(uint64(v))
-		// case uint8:
-		// 	f.SetUint(uint64(v))
-		// case uint16:
-		// 	f.SetUint(uint64(v))
-		// case uint32:
-		// 	f.SetUint(uint64(v))
-		// case uint64:
-		// 	f.SetUint(v)
 
 		case complex64:
 			f.SetComplex(complex128(v))
