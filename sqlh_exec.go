@@ -332,7 +332,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 	}()
 
 	// Get rows from database using the transaction. Limit to 2 to detect multiple rows.
-	rows, _, err := ListRows[T](tx, 0, "", 2, wheresToAttrs(wheres)...)
+	rows, _, err := ListRows[T](tx, 0, "", "", 2, wheresToAttrs(wheres)...)
 	if err != nil {
 		return // Rollback will be called
 	}
@@ -410,7 +410,7 @@ func Get[T any](db querier, wheres ...Where) (row *T, err error) {
 	}
 
 	// Get rows from database. Limit to 2 to detect multiple rows
-	rows, _, err := ListRows[T](db, 0, "", 2, wheresToAttrs(wheres)...)
+	rows, _, err := ListRows[T](db, 0, "", "", 2, wheresToAttrs(wheres)...)
 	if err != nil {
 		return nil, err // Return nil pointer on error
 	}
@@ -527,11 +527,11 @@ func Count[T any](db querier, wheres ...Where) (count int, err error) {
 // an error with message "not found". It returns number of rows limited to
 // numRows. The default value for numRows is 10. The numRows may be set by
 // SetNumRows and get by GetNumRows functions.
-func List[T any](db querier, previous int, orderBy string, listAttrs ...any) (
+func List[T any](db querier, previous int, groupBy, orderBy string, listAttrs ...any) (
 	rows []T, pagination int, err error) {
 
 	// Call ListRows function with default number of rows
-	return ListRows[T](db, previous, orderBy, query.GetNumRows(), listAttrs...)
+	return ListRows[T](db, previous, groupBy, orderBy, query.GetNumRows(), listAttrs...)
 }
 
 // ListRows returns rows from T database table.
@@ -544,7 +544,7 @@ func List[T any](db querier, previous int, orderBy string, listAttrs ...any) (
 // numRows.
 //
 // The listAttrs is a variadic list of Where conditions to filter the rows.
-func ListRows[T any](db querier, previous int, orderBy string, numRows int,
+func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows int,
 	listAttrs ...any) (rows []T, pagination int, err error) {
 
 	// Function to process errors on ListRange
@@ -554,7 +554,7 @@ func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 	rows = make([]T, 0, numRows)
 
 	// Iterate over list records and append it to rows slice
-	for _, row := range ListRange[T](db, previous, orderBy, numRows, listAttrs...) {
+	for _, row := range ListRange[T](db, previous, groupBy, orderBy, numRows, listAttrs...) {
 		rows = append(rows, row)
 	}
 
@@ -574,7 +574,7 @@ func ListRows[T any](db querier, previous int, orderBy string, numRows int,
 // To check for errors, add a function of type func(error) to the query
 // arguments (listAttrs parameter of this function). The range will stop on any
 // error returned by the function.
-func ListRange[T any](db querier, offset int, orderBy string, limit int,
+func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int,
 	listAttrs ...any) iter.Seq2[int, T] {
 
 	// Get errorFunc and ctx from listAttrs
@@ -584,7 +584,7 @@ func ListRange[T any](db querier, offset int, orderBy string, limit int,
 	return func(yield func(i int, row T) bool) {
 
 		// Create select statement and get select arguments
-		stmt, args, err := listStatement[T](offset, orderBy, limit, listAttrs...)
+		stmt, args, err := listStatement[T](offset, groupBy, orderBy, limit, listAttrs...)
 		if err != nil {
 			errFunc(err)
 			return
@@ -787,7 +787,7 @@ func wheresToAttrs(wheres []Where) (listAttrs []any) {
 //   - string - represents the alias for the SELECT table
 //   - bool - represents a DISTINCT clause
 //   - *string - represents the name of the SELECT table
-func listStatement[T any](previous int, orderBy string, numRows int,
+func listStatement[T any](previous int, groupBy, orderBy string, numRows int,
 	listAttrs ...any) (selectStmt string, selectArgs []any, err error) {
 
 	var attr = &query.SelectAttr{}
@@ -823,6 +823,9 @@ func listStatement[T any](previous int, orderBy string, numRows int,
 		attr.Wheres = append(attr.Wheres, w.Field+"?")
 		selectArgs = append(selectArgs, w.Value)
 	}
+
+	// Group by
+	attr.GroupBy = groupBy
 
 	// Order by
 	attr.OrderBy = orderBy

@@ -36,6 +36,9 @@ type SelectAttr struct {
 	// Join wheres by "or" if true
 	WheresJoinOr bool
 
+	// Group by (optional). Example: "id, name"
+	GroupBy string
+
 	// Order by (optional). Example: "id desc, name asc"
 	OrderBy string
 
@@ -272,6 +275,7 @@ func Select[T any](attr *SelectAttr) (string, error) {
 	var joinsFields []string
 	var where string
 	var limit string
+	var groupby string
 	var orderby string
 	var distinct string
 	var name = Name[T]()
@@ -323,6 +327,11 @@ func Select[T any](attr *SelectAttr) (string, error) {
 			where = " WHERE " + strings.Join(attr.Wheres, sep)
 		}
 
+		// Group by
+		if len(attr.GroupBy) > 0 {
+			groupby = fmt.Sprintf(" GROUP BY %s", attr.GroupBy)
+		}
+
 		// Order by
 		if len(attr.OrderBy) > 0 {
 			orderby = fmt.Sprintf(" ORDER BY %s", attr.OrderBy)
@@ -362,12 +371,13 @@ func Select[T any](attr *SelectAttr) (string, error) {
 	fieldsStr := strings.Join(fields, ", ")
 
 	// Return the complete SELECT statement
-	return fmt.Sprintf("SELECT %s%s FROM %s%s%s%s%s;",
+	return fmt.Sprintf("SELECT %s%s FROM %s%s%s%s%s%s;",
 		distinct,
 		fieldsStr,
 		name,
 		joins,
 		where,
+		groupby,
 		orderby,
 		limit,
 	), nil

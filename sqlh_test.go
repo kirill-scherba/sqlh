@@ -66,7 +66,7 @@ func TestSQLOperations(t *testing.T) {
 		require.NoError(t, sqlRows.Err())
 
 		// Empty rows from ListRows returns empty array in JSON
-		rows, _, err := ListRows[TestTable](db, 0, "name ASC", 0)
+		rows, _, err := ListRows[TestTable](db, 0, "", "name ASC", 0)
 		require.NoError(t, err)
 		rowsJson, err := json.Marshal(rows)
 		require.NoError(t, err)
@@ -139,12 +139,12 @@ func TestSQLOperations(t *testing.T) {
 		require.NoError(t, err)
 
 		// List all users
-		users, _, err := ListRows[TestTable](db, 0, "name ASC", 100)
+		users, _, err := ListRows[TestTable](db, 0, "", "name ASC", 100)
 		require.NoError(t, err)
 		assert.Len(t, users, 2)
 
 		// List with where clause
-		bobs, _, err := ListRows[TestTable](db, 0, "name ASC", 100, Where{"name=", "Bob"})
+		bobs, _, err := ListRows[TestTable](db, 0, "", "name ASC", 100, Where{"name=", "Bob"})
 		require.NoError(t, err)
 		assert.Len(t, bobs, 1)
 		assert.Equal(t, "Bob", bobs[0].Name)
@@ -152,16 +152,44 @@ func TestSQLOperations(t *testing.T) {
 		// List with context to check 1 microsecond timeout
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Microsecond)
 		defer cancel()
-		users, _, err = ListRows[TestTable](db, 0, "name ASC", 100, ctx)
+		users, _, err = ListRows[TestTable](db, 0, "", "name ASC", 100, ctx)
 		require.Error(t, err)
 		assert.Equal(t, ctx.Err(), context.DeadlineExceeded)
 
 		// List with context to check cancel
 		ctx2, cancel2 := context.WithCancel(context.Background())
 		cancel2()
-		users, _, err = ListRows[TestTable](db, 0, "name ASC", 100, ctx2)
+		users, _, err = ListRows[TestTable](db, 0, "", "name ASC", 100, ctx2)
 		require.Error(t, err)
 		assert.Equal(t, ctx2.Err(), context.Canceled)
+	})
+
+	t.Run("List with Group By", func(t *testing.T) {
+
+		type TestTable struct {
+			NumName int `db:"count(*) as numname"`
+			Name    string
+		}
+
+		// List all users
+		users, _, err := ListRows[TestTable](db, 0, "", "", 100)
+		require.NoError(t, err)
+		require.Len(t, users, 1)
+		require.Equal(t, 2, users[0].NumName)
+
+		// List users and group by name
+		users, _, err = ListRows[TestTable](db, 0, "name", "name ASC", 100)
+		require.NoError(t, err)
+		require.Len(t, users, 2)
+		require.Equal(t, 1, users[0].NumName)
+		require.Equal(t, 1, users[1].NumName)
+
+		// List users and group by name and where clause
+		users, _, err = ListRows[TestTable](db, 0, "name", "name ASC", 100,
+			Where{"name=", "Bob"},
+		)
+		require.NoError(t, err)
+		require.Len(t, users, 1)
 	})
 
 	t.Run("List with Joins", func(t *testing.T) {
@@ -179,7 +207,7 @@ func TestSQLOperations(t *testing.T) {
 		}
 
 		// List all users
-		users, _, err := ListRows[testTable](db, 0, "name ASC", 100,
+		users, _, err := ListRows[testTable](db, 0, "", "name ASC", 100,
 			SetAlias("t"),
 			query.Join{Name: "TestTable2", On: "t.id = o.id", Alias: "o"})
 		require.NoError(t, err)
@@ -280,7 +308,7 @@ func TestSQLOperations(t *testing.T) {
 	// 6. Test list range with pointer
 	t.Run("ListRange", func(t *testing.T) {
 		// List with where clause
-		for _, row := range ListRange[TestTable](db, 0, "name ASC", 0,
+		for _, row := range ListRange[TestTable](db, 0, "", "name ASC", 0,
 			Where{"name=", "Bob"}, func(e error) {
 				assert.NoError(t, e)
 			}) {
@@ -288,7 +316,7 @@ func TestSQLOperations(t *testing.T) {
 		}
 
 		// List with where clause
-		for _, row := range ListRange[TestTable](db, 0, "name ASC", 0,
+		for _, row := range ListRange[TestTable](db, 0, "", "name ASC", 0,
 			Where{"name=", "Alice"}, func(e error) {
 				assert.NoError(t, e)
 			}) {
@@ -308,7 +336,7 @@ func TestSQLOperations(t *testing.T) {
 		assert.ErrorIs(t, err, sql.ErrNoRows, "expected sql.ErrNoRows after deleting")
 
 		// Check remaining rows
-		remainingUsers, _, err := ListRows[TestTable](db, 0, "name ASC", 100)
+		remainingUsers, _, err := ListRows[TestTable](db, 0, "", "name ASC", 100)
 		require.NoError(t, err)
 		assert.Len(t, remainingUsers, 1)
 		assert.Equal(t, "Bob", remainingUsers[0].Name)
