@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"iter"
 	"reflect"
+	"strings"
 
 	"github.com/kirill-scherba/sqlh/query"
 )
@@ -132,6 +133,52 @@ func GetNumRows() int {
 // an insert statement. Each row is then inserted in a loop. If any error occurs,
 // the transaction is rolled back. Otherwise, the transaction is committed.
 func Insert[T any](db *sql.DB, rows ...T) (err error) {
+	return InsertWithCallback(db, nil, rows...)
+}
+
+// InsertId inserts rows into the T database table and returns the last inserted
+// row ID.
+//
+// It accepts a variadic number of rows of type T and inserts them into the
+// database table. The function starts a transaction and prepares
+// an insert statement. Each row is then inserted in a loop. If any error occurs,
+// the transaction is rolled back. Otherwise, the transaction is committed.
+// The last inserted row ID is returned as a result.
+func InsertId[T any](db *sql.DB, rows ...T) (id int64, err error) {
+	// Call insertWithCallback function
+	err = InsertWithCallback(db,
+		// Callback function which returns last inserted row ID
+		func(db *sql.DB, tx *sql.Tx) error {
+			id, err = getLastInsertID(db, tx)
+			return err
+		},
+		// Rows to insert
+		rows...)
+	return
+}
+
+// InsertWithCallback inserts rows into the T database table and calls the
+// callback function after the rows are successfully inserted.
+//
+// The function accepts a database connection, a callback function, and a
+// variadic number of rows of type T. The callback function is called after the
+// rows are successfully inserted. If any error occurs, the transaction is
+// rolled back. Otherwise, the transaction is committed.
+//
+// The callback function is called with the database connection and the
+// transaction object as parameters instead of transaction. If the callback
+// function returns an error, the transaction is rolled back. Otherwise, the
+// transaction is committed.
+//
+// The function returns an error if any error occurs.
+func InsertWithCallback[T any](
+	// Database connection
+	db *sql.DB,
+	// Callback function which calls after rows are successfully inserted
+	callback func(db *sql.DB, tx *sql.Tx) error,
+	// Rows to insert
+	rows ...T,
+) (err error) {
 
 	// Create insert statement
 	insertStmt, err := query.Insert[T]()
@@ -145,12 +192,23 @@ func Insert[T any](db *sql.DB, rows ...T) (err error) {
 		return
 	}
 
-	// Commit or rollback transaction
+	// Commit or rollback transaction depending on error and callback function
 	defer func() {
 		if err != nil {
 			tx.Rollback()
 			return
 		}
+
+		// Call callback function
+		if callback != nil {
+			err = callback(db, tx)
+			if err != nil {
+				tx.Rollback()
+				return
+			}
+		}
+
+		// Commit transaction
 		err = tx.Commit()
 	}()
 
@@ -648,6 +706,32 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 			errFunc(err)
 		}
 	}
+}
+
+// getLastInsertID returns the last inserted row ID for the given database
+// connection and transaction. It supports SQLite, MySQL, PostgreSQL and
+// SQL Server. If the database driver is not supported, it returns an
+// error.
+func getLastInsertID(db *sql.DB, tx *sql.Tx) (id int64, err error) {
+
+	// Get driver name
+	driverName := reflect.TypeOf(db.Driver()).String()
+
+	// Get last inserted row ID
+	switch {
+	case strings.Contains(driverName, "sqlite"):
+		err = tx.QueryRow("SELECT last_insert_rowid()").Scan(&id)
+	case strings.Contains(driverName, "mysql"):
+		err = tx.QueryRow("SELECT LAST_INSERT_ID()").Scan(&id)
+	case strings.Contains(driverName, "postgres"):
+		err = tx.QueryRow("SELECT currval('table_name_id_seq')").Scan(&id)
+	case strings.Contains(driverName, "sqlserver"):
+		err = tx.QueryRow("SELECT SCOPE_IDENTITY()").Scan(&id)
+	default:
+		err = fmt.Errorf("unsupported database driver")
+	}
+
+	return
 }
 
 // getErrfuncAndCtx gets func(error) and context from attrs and remove it from

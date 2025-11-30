@@ -327,3 +327,49 @@ func TestSQLOperations(t *testing.T) {
 		assert.ErrorIs(t, err, ErrMultipleRowsFound)
 	})
 }
+
+func TestInsertId(t *testing.T) {
+
+	// Open in-memory SQLite database for testing
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	require.NoError(t, err, "failed to open database")
+	defer db.Close()
+
+	// Create table
+	createStmt, err := query.Table[TestTable]()
+	require.NoError(t, err)
+	_, err = db.Exec(createStmt)
+	require.NoError(t, err, "failed to create table")
+
+	// Create table 2
+	createStmt, err = query.Table[TestTable2]()
+	require.NoError(t, err)
+	_, err = db.Exec(createStmt)
+	require.NoError(t, err, "failed to create table")
+
+	t.Run("Insert and Get Autoincrement ID", func(t *testing.T) {
+
+		// Insert 1
+		user1 := TestTable{Name: "Alice", Data: []byte("data1")} // ID is 0
+		id, err := InsertId(db, user1)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), id)
+
+		// Retrieve to verify
+		retrievedUser, err := Get[TestTable](db, Where{"name=", "Alice"})
+		require.NoError(t, err)
+		require.NotNil(t, retrievedUser)
+
+		// Check if autoincrement ID was assigned
+		assert.Equal(t, int64(1), retrievedUser.ID)
+		assert.Equal(t, "Alice", retrievedUser.Name)
+		assert.Equal(t, []byte("data1"), retrievedUser.Data)
+
+		// Insert 2
+		user2 := TestTable{Name: "Bob", Data: []byte("data2")} // ID is 0
+		id, err = InsertId(db, user2)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), id)
+
+	})
+}
