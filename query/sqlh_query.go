@@ -7,6 +7,8 @@
 package query
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"reflect"
 	"strings"
@@ -139,8 +141,9 @@ func GetNumRows() int {
 // Struct tagas are used to map database fields to struct fields.
 // The tag is optional. Next tags may be used:
 //   - db:"some_field_name" - set database field name
-//   - db_type:"text" - set database field type
 //   - db_key:"not null primary key" - set database field key
+//   - db_type:"text" - set database field type
+//   - db_table_name:"some_table" - set database table name
 func Table[T any]() (string, error) {
 
 	// Check if type is struct
@@ -167,11 +170,14 @@ func Table[T any]() (string, error) {
 			return "", err
 		}
 
+		// Get db_key tag
+		dbKey := field.Tag.Get("db_key")
+
 		// Use db_key text only if field name is "_"
 		if fieldName == "_" {
-			dbFields = append(dbFields,
-				strings.TrimRight(field.Tag.Get("db_key"), " "),
-			)
+			if len(dbKey) > 0 {
+				dbFields = append(dbFields, strings.TrimRight(dbKey, " "))
+			}
 			continue
 		}
 
@@ -179,7 +185,7 @@ func Table[T any]() (string, error) {
 			dbFields,
 			strings.TrimRight(
 				fmt.Sprintf("%s %s %s", strings.ToLower(fieldName), fieldType,
-					field.Tag.Get("db_key")),
+					dbKey),
 				" ",
 			),
 		)
@@ -453,35 +459,42 @@ func Args(row any, forWrite bool) ([]any, error) {
 	for i := range rowVal.NumField() {
 		field := rowType.Field(i)
 
-		// For write operations, skip autoincrement fields.
-		if forWrite && isAutoIncrement(field) {
-			continue
-		}
-
 		// Always skip fields tagged with db:"-" or has name "_"
 		if field.Tag.Get("db") == "-" || field.Name == "_" {
 			continue
 		}
 
+		// Create argument
+		arg := rowVal.Field(i).Interface()
+
+		// Create argument for complex numbers
+		if field.Type.Kind() == reflect.Complex64 ||
+			field.Type.Kind() == reflect.Complex128 {
+
+			c := rowVal.Field(i).Interface()
+
+			var buf bytes.Buffer
+			enc := gob.NewEncoder(&buf)
+			enc.Encode(c)
+
+			arg = buf.Bytes()
+		}
+
+		// Append argument
 		if forWrite {
+			// For write operations, skip autoincrement fields.
+			if isAutoIncrement(field) {
+				continue
+			}
 			// For writing, get the value of the field.
-			args = append(args, rowVal.Field(i).Interface())
+			args = append(args, arg)
 		} else {
 			// For reading/scanning, get a pointer to a copy of the field's value.
-			arg := rowVal.Field(i).Interface()
 			args = append(args, &arg)
 		}
 	}
 
 	return args, nil
-}
-
-// isAutoIncrement returns true if the given struct field is tagged with
-// "autoincrement" or "AUTO_INCREMENT". It is used to skip autoincrement fields
-// in INSERT and UPDATE operations.
-func isAutoIncrement(field reflect.StructField) bool {
-	return strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "autoincrement") ||
-		strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "AUTO_INCREMENT")
 }
 
 // ArgsAppay sets fields values of the given pointer to struct row from the args
@@ -492,6 +505,13 @@ func isAutoIncrement(field reflect.StructField) bool {
 // Supported types are string, float64, time.Time, int64 and bool.
 // If unsupported type is found, it returns an error.
 func ArgsAppay(row any, args []any) (err error) {
+
+	// Recover from panic
+	defer func() {
+		if e := recover(); e != nil {
+			err = fmt.Errorf("%v", e)
+		}
+	}()
 
 	// Get row value and type
 	rowVal, rowType := getRowValPtr(row)
@@ -509,12 +529,13 @@ func ArgsAppay(row any, args []any) (err error) {
 			continue
 		}
 
-		// Get the current field and its value
+		// Get the current field and its value from the args
 		f := rowVal.Field(i)
 		arg := reflect.ValueOf(args[i]).Elem().Interface()
 
 		// Set the field value based on the type of the argument
 		switch v := arg.(type) {
+
 		case string:
 			f.SetString(v)
 
@@ -529,32 +550,44 @@ func ArgsAppay(row any, args []any) (err error) {
 		case float32:
 			f.SetFloat(float64(v))
 
+		case int:
+			setInt(f, v)
+		case int8:
+			setInt(f, v)
+		case int16:
+			setInt(f, v)
+		case int32:
+			setInt(f, v)
 		case int64:
-			// Set the field value based on the type of the field
-			switch f.Kind() {
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				f.SetInt(v)
-			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				f.SetUint(uint64(v))
-			case reflect.Bool:
-				f.SetBool(v == 1)
-			}
+			setInt(f, v)
 
-		case complex64:
-			f.SetComplex(complex128(v))
-		case complex128:
-			f.SetComplex(v)
+		case uint:
+			setInt(f, v)
+		case uint8:
+			setInt(f, v)
+		case uint16:
+			setInt(f, v)
+		case uint32:
+			setInt(f, v)
+		case uint64:
+			setInt(f, v)
 
 		case []byte:
 			switch {
+
 			// Ensure the target field f in the struct is also []byte
 			case f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.Uint8:
 				f.SetBytes(v)
 
 			// If the target field is a string, convert []byte to string
 			case f.Kind() == reflect.String:
-				rawString := string(v)
-				f.SetString(rawString)
+				f.SetString(string(v))
+
+			// If the target field is a Complex128, convert []byte to Complex128
+			case f.Kind() == reflect.Complex128, f.Kind() == reflect.Complex64:
+				var c complex128
+				gob.NewDecoder(bytes.NewReader(v)).Decode(&c)
+				f.SetComplex(c)
 
 			// Return an error in other cases
 			default:
@@ -575,11 +608,13 @@ func ArgsAppay(row any, args []any) (err error) {
 	return
 }
 
-// Name returns table Name from struct Name.
+// Name returns table Name from struct Name or db_table_name tag.
 //
 // It takes type T as an argument and returns the table Name as a string.
-// The table Name is the lower case version of the struct Name.
-func Name[T any]() string {
+// The table Name is the lower case version of the struct Name. If the tag
+// db_table_name is present in any struct field, it is used as the table Name
+// and replaces table Name created from the struct Name.
+func Name[T any]() (name string) {
 	// Get the type of the struct
 	t := reflect.TypeOf(new(T)).Elem()
 
@@ -588,8 +623,52 @@ func Name[T any]() string {
 		t = t.Elem()
 	}
 
-	// Return the table name as the lower case version of the struct name
-	return strings.ToLower(t.Name())
+	// Get the table name as the lower case version of the struct name
+	name = strings.ToLower(t.Name())
+
+	// Find the table name in the struct fields tag db_table
+	for i := range t.NumField() {
+		field := t.Field(i)
+		if tag := field.Tag.Get("db_table_name"); tag != "" {
+			name = tag
+			break
+		}
+	}
+
+	return
+}
+
+// isAutoIncrement returns true if the given struct field is tagged with
+// "autoincrement" or "AUTO_INCREMENT". It is used to skip autoincrement fields
+// in INSERT and UPDATE operations.
+func isAutoIncrement(field reflect.StructField) bool {
+	return strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "autoincrement") ||
+		strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "AUTO_INCREMENT")
+}
+
+// This class definition in Go defines an interface named integer that
+// represents a type constraint. It specifies that any type implementing this
+// interface must be one of the following:
+// int, int8, int16, int32, int64, uint, uint8, uint16, uint32, or uint64.
+// It is used as a type constraint to ensure that a variable or function parameter
+// adheres to the specified types.
+type integer interface {
+	int | int8 | int16 | int32 | int64 | uint | uint8 | uint16 | uint32 | uint64
+}
+
+// setInt sets the value of the given field to the given integer value.
+//
+// The function only works if the given field is of type int, int8, int16,
+// int32, int64, uint, uint8, uint16, uint32, uint64 or bool.
+func setInt[T integer](f reflect.Value, v T) {
+	switch f.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		f.SetInt(int64(v))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		f.SetUint(uint64(v))
+	case reflect.Bool:
+		f.SetBool(v == 1)
+	}
 }
 
 // getRowVal returns the reflect.Value and reflect.Type of the given row.
@@ -760,6 +839,8 @@ func getFieldType(field reflect.StructField) (fieldType string, err error) {
 			} else {
 				err = fmt.Errorf("unsupported struct type: %s", field.Type)
 			}
+		case reflect.Complex64, reflect.Complex128:
+			fieldType = "blob"
 		default:
 			// If the type is not supported, return an error
 			err = fmt.Errorf("unsupported type: %s", field.Type.Kind())

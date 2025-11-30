@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSQLQuery(t *testing.T) {
@@ -20,7 +21,7 @@ func TestSQLQuery(t *testing.T) {
 		type SomeStruct struct {
 			Name string    `db:"name"`
 			Cost float64   `db:"cost"`
-			Age  int32     `db:"age"`
+			Age  int16     `db:"age"`
 			Time time.Time `db:"time"`
 		}
 
@@ -30,30 +31,105 @@ func TestSQLQuery(t *testing.T) {
 			Age:  20,
 			Time: time.Now(),
 		}
-
-		// Create args
-		args, err := Args(someStruct, false)
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		t.Logf("someStruct: %+v", someStruct)
 
+		// Create args for reading
+		args, err := Args(someStruct, false)
+		require.NoError(t, err)
+		for i := range args {
+			t.Logf("args[%d]: %+v %T", i, *args[i].(*any), *args[i].(*any))
+		}
+
 		// Update args
-		*args[0].(*any) = "Jane"
-		*args[1].(*any) = float32(200.0)
-		*args[2].(*any) = int8(30)
-		*args[3].(*any) = time.Now()
+		*args[0].(*any) = "Jane"         // Name
+		*args[1].(*any) = float32(200.0) // Cost
+		*args[2].(*any) = 33             // Age
+		*args[3].(*any) = time.Now()     // Time
+		for i := range args {
+			t.Logf("args[%d]: %+v %T", i, *args[i].(*any), *args[i].(*any))
+		}
 
 		// Applay args
 		err = ArgsAppay(&someStruct, args)
-		if err != nil {
-			t.Fatal(err)
-		}
-
+		require.NoError(t, err)
 		t.Logf("someStruct: %+v", someStruct)
 	})
+}
 
+func TestTable(t *testing.T) {
+
+	type SomeTable struct {
+		Name   string    `db:"name" db_type:"varchar(36)" db_key:"not null primary key"`
+		DishId int64     `db_key:"references dishtypes(id)"`
+		Cost   float64   `db:"cost"`
+		Age    int32     `db:"age"`
+		Time   time.Time `db:"time"`
+		Compl  complex128
+		_      bool `db_table_name:"some_table"`
+	}
+
+	t.Run("Test table with db_table_name tag and complex type struct field", func(t *testing.T) {
+
+		// Open db
+		db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+		require.NoError(t, err, "failed to open database: %v", err)
+		defer db.Close()
+
+		// Create table query
+		createQuery, err := Table[SomeTable]()
+		require.NoError(t, err, "failed to create table query: %v", err)
+		t.Log(createQuery)
+
+		// Create table in db
+		_, err = db.Exec(createQuery)
+		require.NoError(t, err, "failed to create table: %v", err)
+
+		// Insert row query
+		insertQuery, err := Insert[SomeTable]()
+		require.NoError(t, err, "failed to create insert query: %v", err)
+		t.Log(insertQuery)
+
+		// Create row
+		var row = SomeTable{
+			Name:   "John",
+			DishId: 1,
+			Cost:   100.0,
+			Age:    20,
+			Time:   time.Now(),
+			Compl:  3.14 + 2i,
+		}
+
+		// Get args for write row
+		args, err := Args(row, true)
+		require.NoError(t, err, "failed to get args: %v", err)
+
+		// Insert row
+		_, err = db.Exec(insertQuery, args...)
+		require.NoError(t, err, "failed to insert row: %v", err)
+
+		// Select row query
+		selectQuery, err := Select[SomeTable](&SelectAttr{
+			Paginator: &Paginator{0, 1},
+		})
+		require.NoError(t, err, "failed to get row: %v", err)
+		t.Log(selectQuery)
+
+		// Get args for read row
+		var row2 SomeTable
+		args, err = Args(row2, false)
+		require.NoError(t, err, "failed to get args: %v", err)
+
+		// Read row
+		err = db.QueryRow(selectQuery).Scan(args...)
+		require.NoError(t, err, "failed to get row: %v", err)
+
+		// Applay args to row2 struct
+		err = ArgsAppay(&row2, args)
+		require.NoError(t, err, "failed to apply args: %v", err)
+
+		// Print row2 struct
+		t.Log(row2)
+	})
 }
 
 func TestSelect(t *testing.T) {
@@ -117,7 +193,7 @@ func TestSelect(t *testing.T) {
 		return
 	}
 
-	t.Run("TestSelect", func(t *testing.T) {
+	t.Run("Test Select", func(t *testing.T) {
 
 		attr := &SelectAttr{
 			Wheres: []string{"t.name = ?", "t.cost > ?"},
@@ -136,7 +212,7 @@ func TestSelect(t *testing.T) {
 		}
 	})
 
-	t.Run("TestSelectExecute", func(t *testing.T) {
+	t.Run("Test Select Execute", func(t *testing.T) {
 
 		// Create db
 		db, err := createDB()
@@ -174,7 +250,7 @@ func TestSelect(t *testing.T) {
 		}
 	})
 
-	t.Run("TestSelectJoin", func(t *testing.T) {
+	t.Run("Test Select Join", func(t *testing.T) {
 
 		attr := &SelectAttr{
 			Wheres: []string{"t.name = ?", "t.cost > ?"},
@@ -193,7 +269,7 @@ func TestSelect(t *testing.T) {
 		t.Log(selectQuery)
 	})
 
-	t.Run("TestSelectJsonExecute", func(t *testing.T) {
+	t.Run("Test Select Json Execute", func(t *testing.T) {
 
 		// Create db
 		db, err := createDB()
