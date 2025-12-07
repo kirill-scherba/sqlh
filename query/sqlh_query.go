@@ -599,6 +599,11 @@ func ArgsAppay(row any, args []any) (err error) {
 				gob.NewDecoder(bytes.NewReader(v)).Decode(&c)
 				f.SetComplex(c)
 
+			// If the target field is a Time, convert []byte to Time
+			case f.Kind() == reflect.Struct && f.Type() == reflect.TypeOf(time.Time{}):
+				t := convertBytesToTime(v)
+				f.Set(reflect.ValueOf(t))
+
 			// Return an error in other cases
 			default:
 				err = fmt.Errorf("type mismatch for field %s: "+
@@ -616,6 +621,16 @@ func ArgsAppay(row any, args []any) (err error) {
 	}
 
 	return
+}
+
+// convertBytesToTime takes a byte slice and converts it to a time.Time.
+// It takes a byte slice and converts it to a string, then parses the string
+// using the given layout. If there is an error during parsing, it returns
+// the zero time.Time.
+func convertBytesToTime(bytes []byte) time.Time {
+	layout := "2006-01-02 15:04:05"
+	timestamp, _ := time.Parse(layout, string(bytes))
+	return timestamp
 }
 
 // Name returns table Name from struct Name or db_table_name tag.
