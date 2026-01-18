@@ -574,11 +574,34 @@ func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows 
 // To check for errors, add a function of type func(error) to the query
 // arguments (listAttrs parameter of this function). The range will stop on any
 // error returned by the function.
+//
+// To use Joins, add a Join type to the listAttrs parameter and set T to func
+// generic type with mine table and joined tables structs. To add Joins use the
+// query.MakeJoin function.
+//
+// Example:
+//
+//  users, _, err := ListRange[struct {
+//  	*TestTable  // Main table
+//  	*TestTable2 // Other joined table
+//  }](db, 0, "", "name ASC", 100,
+//  	SetAlias("t"), // Set main table alias to use in Joins
+//  	query.MakeJoin[TestTable2](query.Join{On: "t.id = o.id", Alias: "o"}),
+//  )
 func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int,
 	listAttrs ...any) iter.Seq2[int, T] {
 
 	// Get errorFunc and ctx from listAttrs
 	listAttrs, errFunc, ctx := getErrfuncAndCtx(listAttrs)
+
+	// Check ListRange is with join
+	var withJoin bool
+	for _, attr := range listAttrs {
+		if _, ok := attr.(query.Join); ok {
+			withJoin = true
+			break
+		}
+	}
 
 	// Return iterator
 	return func(yield func(i int, row T) bool) {
@@ -593,7 +616,19 @@ func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int
 		// Add error function and ctx to arguments
 		args = append(args, errFunc, ctx)
 
-		// Iterate over rows
+		// Iterate over rows in request with join
+		if withJoin {
+			var i = offset
+			for row := range QueryRange[T](db, stmt, args...) {
+				if !yield(i, row) {
+					break
+				}
+				i++
+			}
+			return
+		}
+
+		// Iterate over rows in request without join
 		var i = offset
 		for row := range QueryRange[struct{ In T }](db, stmt, args...) {
 			if !yield(i, row.In) {

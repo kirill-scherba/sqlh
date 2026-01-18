@@ -139,9 +139,16 @@ func TestSQLOperations(t *testing.T) {
 		require.NoError(t, err)
 
 		// List all users
-		users, _, err := ListRows[TestTable](db, 0, "", "name ASC", 100)
+		usersAll, _, err := ListRows[*TestTable](db, 0, "", "name ASC", 100)
 		require.NoError(t, err)
-		assert.Len(t, users, 2)
+		assert.Len(t, usersAll, 2)
+
+		// Check list contents
+		usersValid := []string{"Alicia", "Bob"}
+		for i, u := range usersAll {
+			t.Log(u)
+			assert.Equal(t, usersValid[i], u.Name)
+		}
 
 		// List with where clause
 		bobs, _, err := ListRows[TestTable](db, 0, "", "name ASC", 100, Where{"name=", "Bob"})
@@ -152,14 +159,15 @@ func TestSQLOperations(t *testing.T) {
 		// List with context to check 1 microsecond timeout
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Microsecond)
 		defer cancel()
-		users, _, err = ListRows[TestTable](db, 0, "", "name ASC", 100, ctx)
+		_, _, err = ListRows[TestTable](db, 0, "", "name ASC", 100, ctx)
 		require.Error(t, err)
 		assert.Equal(t, ctx.Err(), context.DeadlineExceeded)
 
 		// List with context to check cancel
 		ctx2, cancel2 := context.WithCancel(context.Background())
+		defer cancel2()
 		cancel2()
-		users, _, err = ListRows[TestTable](db, 0, "", "name ASC", 100, ctx2)
+		_, _, err = ListRows[TestTable](db, 0, "", "name ASC", 100, ctx2)
 		require.Error(t, err)
 		assert.Equal(t, ctx2.Err(), context.Canceled)
 	})
@@ -194,27 +202,18 @@ func TestSQLOperations(t *testing.T) {
 
 	t.Run("List with Joins", func(t *testing.T) {
 
-		type testTable struct {
-
-			// Test table fields
-			ID   int64  `db:"id" db_key:"not null primary key autoincrement"`
-			Name string `db:"name"`
-			Data []byte `db:"data"`
-
-			// Test table 2 fields
-			// ID2   int64 `db:"id"`
-			// Value int64 `db:"value"`
-		}
-
-		// List all users
-		users, _, err := ListRows[testTable](db, 0, "", "name ASC", 100,
-			SetAlias("t"),
-			query.Join{Name: "TestTable2", On: "t.id = o.id", Alias: "o"})
+		// List all users  with joins
+		users, _, err := ListRows[struct {
+			*TestTable  // Main table
+			*TestTable2 // Other joined table
+		}](db, 0, "", "name ASC", 100,
+			SetAlias("t"), // Set main table alias to use in Joins
+			query.MakeJoin[TestTable2](query.Join{On: "t.id = o.id", Alias: "o"}),
+		)
 		require.NoError(t, err)
-		// assert.Len(t, users, 2)
 
 		for _, user := range users {
-			t.Logf("user: %+v", user)
+			t.Logf("user: %+v, value: %d", user.Name, user.Value)
 		}
 	})
 
@@ -308,7 +307,7 @@ func TestSQLOperations(t *testing.T) {
 	// 6. Test list range with pointer
 	t.Run("ListRange", func(t *testing.T) {
 		// List with where clause
-		for _, row := range ListRange[TestTable](db, 0, "", "name ASC", 0,
+		for _, row := range ListRange[*TestTable](db, 0, "", "name ASC", 0,
 			Where{"name=", "Bob"}, func(e error) {
 				assert.NoError(t, e)
 			}) {
@@ -316,7 +315,7 @@ func TestSQLOperations(t *testing.T) {
 		}
 
 		// List with where clause
-		for _, row := range ListRange[TestTable](db, 0, "", "name ASC", 0,
+		for _, row := range ListRange[*TestTable](db, 0, "", "name ASC", 0,
 			Where{"name=", "Alice"}, func(e error) {
 				assert.NoError(t, e)
 			}) {

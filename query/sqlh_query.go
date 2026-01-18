@@ -643,6 +643,8 @@ func Name[T any]() (name string) {
 	// Get the type of the struct
 	t := reflect.TypeOf(new(T)).Elem()
 
+begin:
+
 	// If the type is a pointer, get the type of the struct it points to
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -654,6 +656,14 @@ func Name[T any]() (name string) {
 	// Find the table name in the struct fields tag db_table
 	for i := range t.NumField() {
 		field := t.Field(i)
+
+		// If first field is struct type get name from this struct fields
+		if i == 0 && (field.Type.Kind() == reflect.Struct ||
+			field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct) {
+			t = field.Type
+			goto begin
+		}
+
 		if tag := field.Tag.Get("db_table_name"); tag != "" {
 			name = tag
 			break
@@ -760,9 +770,10 @@ func checkType[T any]() (err error) {
 // The names are determined by the db tag in the struct field.
 // If the db tag is not specified, the field name is used as the
 // table field name.
-func fields[T any](alls ...bool) (fields []string) {
+func fields[T any](alls ...bool) (fieldsList []string) {
 	t := reflect.TypeOf(new(T)).Elem()
 
+begin:
 	// If the type is a pointer, get the type of the struct it points to
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -787,7 +798,16 @@ func fields[T any](alls ...bool) (fields []string) {
 		// If the field name is not empty and the db tag is not set to "-"
 		// add the field name to the slice
 		if fieldName, ok := getFieldName(field); ok && fieldName != "_" {
-			fields = append(fields, fieldName)
+
+			// If i == 0 and field is struct than get fields from this struct.
+			// It used in ListRange when we use JOIN
+			if i == 0 && (field.Type.Kind() == reflect.Struct ||
+				field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct) {
+				t = field.Type
+				goto begin
+			}
+
+			fieldsList = append(fieldsList, fieldName)
 		}
 	}
 	return
