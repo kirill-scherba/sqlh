@@ -633,6 +633,11 @@ func convertBytesToTime(bytes []byte) time.Time {
 	return timestamp
 }
 
+// TableName interface is used to get table name from struct Name.
+type TableName interface {
+	TableName() string
+}
+
 // Name returns table Name from struct Name or db_table_name tag.
 //
 // It takes type T as an argument and returns the table Name as a string.
@@ -668,6 +673,12 @@ begin:
 			name = tag
 			break
 		}
+	}
+
+	// Create instance of struct and get table name by interface TableName
+	newT := reflect.New(t).Interface()
+	if i, ok := newT.(TableName); ok {
+		name = i.TableName()
 	}
 
 	return

@@ -324,3 +324,53 @@ func TestSelect(t *testing.T) {
 		t.Logf("sqlRows len: %v", l)
 	})
 }
+
+func TestTableName(t *testing.T) {
+
+	t.Run("Default", func(t *testing.T) {
+
+		type SomeTable struct {
+			Name string    `db:"name"`
+			Cost float64   `db:"cost"`
+			Age  int32     `db:"age"`
+			Time time.Time `db:"time"`
+		}
+
+		name := Name[SomeTable]()
+		require.Equal(t, "sometable", name)
+
+	})
+
+	t.Run("By tag", func(t *testing.T) {
+
+		type SomeTable struct {
+			Name string    `db:"name" db_table_name:"some_table"`
+			Cost float64   `db:"cost"`
+			Age  int32     `db:"age"`
+			Time time.Time `db:"time"`
+		}
+
+		name := Name[SomeTable]()
+		require.Equal(t, "some_table", name)
+
+	})
+
+	t.Run("By method", func(t *testing.T) {
+
+		name := Name[SomeTable]()
+		require.Equal(t, "some_table_name", name)
+
+	})
+
+}
+
+type SomeTable struct {
+	Name string    `db:"name" db_table_name:"some_table"`
+	Cost float64   `db:"cost"`
+	Age  int32     `db:"age"`
+	Time time.Time `db:"time"`
+}
+
+func (t *SomeTable) TableName() string {
+	return "some_table_name"
+}
