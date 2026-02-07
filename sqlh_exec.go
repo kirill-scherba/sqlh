@@ -126,6 +126,26 @@ func GetNumRows() int {
 	return query.GetNumRows()
 }
 
+// Create creates the SQL table for the T type.
+//
+// It takes a database connection as a parameter and returns an error if the
+// table could not be created.
+//
+// The function does not start a transaction, so it is up to the caller to manage
+// transactions if needed.
+func Create[T any]() (db *sql.DB, err error) {
+
+	// Create the SQL table for the T type
+	createStm, err := query.Table[T]()
+	if err != nil {
+		return
+	}
+
+	// Create the SQL table for the T type
+	_, err = db.Exec(createStm)
+	return
+}
+
 // Insert inserts rows into the T database table.
 //
 // It accepts a variadic number of rows of type T and inserts them into the
@@ -581,13 +601,13 @@ func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows 
 //
 // Example:
 //
-//  users, _, err := ListRange[struct {
-//  	*TestTable  // Main table
-//  	*TestTable2 // Other joined table
-//  }](db, 0, "", "name ASC", 100,
-//  	SetAlias("t"), // Set main table alias to use in Joins
-//  	query.MakeJoin[TestTable2](query.Join{On: "t.id = o.id", Alias: "o"}),
-//  )
+//	users, _, err := ListRange[struct {
+//		*TestTable  // Main table
+//		*TestTable2 // Other joined table
+//	}](db, 0, "", "name ASC", 100,
+//		SetAlias("t"), // Set main table alias to use in Joins
+//		query.MakeJoin[TestTable2](query.Join{On: "t.id = o.id", Alias: "o"}),
+//	)
 func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int,
 	listAttrs ...any) iter.Seq2[int, T] {
 
