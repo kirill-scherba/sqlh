@@ -15,6 +15,7 @@ import (
 	"iter"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/kirill-scherba/sqlh/query"
 )
@@ -142,7 +143,7 @@ func Create[T any]() (db *sql.DB, err error) {
 	}
 
 	// Create the SQL table for the T type
-	_, err = db.Exec(createStm)
+	_, err = execDb(db, createStm)
 	return
 }
 
@@ -248,7 +249,7 @@ func InsertWithCallback[T any](
 			return
 		}
 		// Execute insert statement with arguments
-		_, err = stmt.Exec(args...)
+		_, err = execStmt(stmt, args...)
 		if err != nil {
 			return
 		}
@@ -317,7 +318,7 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 		}
 
 		// Execute update statement
-		_, err = stmt.Exec(args...)
+		_, err = execStmt(stmt, args...)
 		if err != nil {
 			return
 		}
@@ -371,7 +372,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 			err = errArgs
 			return // Rollback
 		}
-		_, err = tx.Exec(insertStmt, args...)
+		_, err = execTx(tx, insertStmt, args...)
 		if err != nil {
 			return // Rollback
 		}
@@ -398,7 +399,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 		}
 		args = append(args, whereValues...)
 
-		_, err = tx.Exec(updateStmt, args...)
+		_, err = execTx(tx, updateStmt, args...)
 		if err != nil {
 			return // Rollback
 		}
@@ -421,7 +422,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 // an error with message "not found".
 // If multiple rows are found, the function returns a default value for row and
 // an error with message "multiple rows found". It returns a pointer to the row.
-func Get[T any](db querier, wheres ...Where) (row *T, err error) {
+func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error) {
 
 	// Check if the where clause is required
 	if len(wheres) == 0 {
@@ -429,8 +430,23 @@ func Get[T any](db querier, wheres ...Where) (row *T, err error) {
 		return nil, err // Return nil pointer on error
 	}
 
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		return
+	}
+
+	// Commit or rollback transaction
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+
 	// Get rows from database. Limit to 2 to detect multiple rows
-	rows, _, err := ListRows[T](db, 0, "", "", 2, wheresToAttrs(wheres)...)
+	rows, _, err := ListRows[T](tx, 0, "", "", 2, wheresToAttrs(wheres)...)
 	if err != nil {
 		return nil, err // Return nil pointer on error
 	}
@@ -493,7 +509,7 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 	defer stmt.Close()
 
 	// Execute delete statement with where arguments
-	_, err = stmt.Exec(whereArgs...)
+	_, err = execStmt(stmt, whereArgs...)
 	return
 }
 
@@ -893,5 +909,62 @@ func listStatement[T any](previous int, groupBy, orderBy string, numRows int,
 
 	// Create select statement
 	selectStmt, err = query.Select[T](attr)
+	return
+}
+
+// Number of retries and delay when database is locked
+const numRetries = 20
+const retryDelay = 100 * time.Millisecond
+
+func execDb(db *sql.DB, query string, args ...any) (result sql.Result, err error) {
+	return execRetries(func() (sql.Result, error) {
+		return db.Exec(query, args...)
+	})
+}
+
+// execStmt executes a query with the given arguments on the given statement.
+// It takes a statement object, a query string, and a variadic list of arguments.
+// The function returns a pointer to the result of the query and an error if encountered.
+// If the query execution fails, the function returns an error immediately.
+// If the query execution is successful, the function returns a pointer to the result of the query.
+// If the query execution fails due to a "database is locked" error, the function
+// retries the query execution up to numRetries times with a retryDelay delay between retries.
+func execStmt(stmt *sql.Stmt, args ...any) (result sql.Result, err error) {
+	return execRetries(func() (sql.Result, error) {
+		return stmt.Exec(args...)
+	})
+}
+
+// execTx executes a query with the given arguments on the given transaction.
+// It takes a transaction object, a query string, and a variadic list of arguments.
+// The function returns a pointer to the result of the query and an error if encountered.
+// If the query execution fails, the function returns an error immediately.
+// If the query execution is successful, the function returns a pointer to the result of the query.
+// If the query execution fails due to a "database is locked" error, the function 
+// retries the query execution up to numRetries times with a retryDelay delay between retries.
+func execTx(tx *sql.Tx, query string, args ...any) (result sql.Result, err error) {
+	return execRetries(func() (sql.Result, error) {
+		return tx.Exec(query, args...)
+	})
+}
+
+// execRetries is a helper function to execute a function that
+// returns a sql.Result and error, retrying up to numRetries times
+// in case of a "database is locked" error. It sleeps for retryDelay
+// milliseconds between retries. If the function returns an error
+// that is not "database is locked", it is returned immediately.
+func execRetries(f func() (sql.Result, error)) (result sql.Result, err error) {
+	for i := range numRetries {
+		result, err = f()
+		if err != nil {
+			if err.Error() == "database is locked" {
+				fmt.Printf("!!! database is locked, retrying %d ...\n", i+1)
+				time.Sleep(retryDelay)
+				continue
+			}
+			return
+		}
+		break
+	}
 	return
 }
