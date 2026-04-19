@@ -134,7 +134,7 @@ func GetNumRows() int {
 //
 // The function does not start a transaction, so it is up to the caller to manage
 // transactions if needed.
-func Create[T any]() (db *sql.DB, err error) {
+func Create[T any](db *sql.DB) (err error) {
 
 	// Create the SQL table for the T type
 	createStm, err := query.Table[T]()
@@ -940,7 +940,7 @@ func execStmt(stmt *sql.Stmt, args ...any) (result sql.Result, err error) {
 // The function returns a pointer to the result of the query and an error if encountered.
 // If the query execution fails, the function returns an error immediately.
 // If the query execution is successful, the function returns a pointer to the result of the query.
-// If the query execution fails due to a "database is locked" error, the function 
+// If the query execution fails due to a "database is locked" error, the function
 // retries the query execution up to numRetries times with a retryDelay delay between retries.
 func execTx(tx *sql.Tx, query string, args ...any) (result sql.Result, err error) {
 	return execRetries(func() (sql.Result, error) {
@@ -954,11 +954,10 @@ func execTx(tx *sql.Tx, query string, args ...any) (result sql.Result, err error
 // milliseconds between retries. If the function returns an error
 // that is not "database is locked", it is returned immediately.
 func execRetries(f func() (sql.Result, error)) (result sql.Result, err error) {
-	for i := range numRetries {
+	for range numRetries {
 		result, err = f()
 		if err != nil {
 			if err.Error() == "database is locked" {
-				fmt.Printf("!!! database is locked, retrying %d ...\n", i+1)
 				time.Sleep(retryDelay)
 				continue
 			}
