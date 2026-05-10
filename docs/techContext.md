@@ -181,5 +181,5 @@ go test -tags mysql ./...
 2. No native `UPSERT` (uses `Set` with SELECT-then-INSERT/UPDATE pattern)
 3. JOIN support is basic (single Join per query, composite struct scanning required)
 4. No aggregate functions (GROUP BY, HAVING, SUM, AVG)
-5. No schema migration support (ALTER TABLE, CREATE INDEX)
+5. No schema migration support (ALTER TABLE)
 6. No raw SQL fragment injection for edge cases

@@ -214,16 +214,51 @@ err := sqlh.Set(db, User{Name: "Dave", Email: "dave@example.com"},
     sqlh.Where{Field: "name=", Value: "Dave"})
 ```
 
-## Memory Bank
+## Custom Table Name
 
-The [memory-bank](memory-bank/) directory contains comprehensive documentation about the project architecture, progress, and context:
+Override the auto-generated snake_case table name using a `db_table_name` struct tag on a `_ bool` field, or define a `TableName() string` method on your struct.
 
-- [projectbrief.md](memory-bank/projectbrief.md) — Project overview and core capabilities
-- [productContext.md](memory-bank/productContext.md) — Problems solved and user experience goals
-- [systemPatterns.md](memory-bank/systemPatterns.md) — Architecture and design patterns
-- [techContext.md](memory-bank/techContext.md) — Technology stack and API surface
-- [activeContext.md](memory-bank/activeContext.md) — Current development focus and roadmap
-- [progress.md](memory-bank/progress.md) — Feature completeness and release history
+**Priority order (highest to lowest):**
+
+1. **`TableName()` method** — highest priority
+2. **`db_table_name` struct tag** — on `_ bool` field
+3. **Auto-generated snake_case** from type name (e.g. `MyTable` → `my_table`)
+
+### Using `db_table_name` tag
+
+```go
+type Product struct {
+    _    bool      `db_table_name:"inventory"`
+    ID   int64     `db:"id" db_key:"primary key autoincrement"`
+    Name string    `db:"name"`
+    Cost float64   `db:"cost"`
+}
+// Generates: CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, cost REAL)
+```
+
+### Using `TableName()` method
+
+```go
+type Product struct {
+    ID   int64     `db:"id" db_key:"primary key autoincrement"`
+    Name string    `db:"name"`
+    Cost float64   `db:"cost"`
+}
+
+func (Product) TableName() string { return "my_products" }
+// Generates: CREATE TABLE IF NOT EXISTS my_products (...)
+```
+
+## Documentation
+
+The [docs](docs/) directory contains comprehensive documentation about the project architecture, progress, and context:
+
+- [projectbrief.md](docs/projectbrief.md) — Project overview and core capabilities
+- [productContext.md](docs/productContext.md) — Problems solved and user experience goals
+- [systemPatterns.md](docs/systemPatterns.md) — Architecture and design patterns
+- [techContext.md](docs/techContext.md) — Technology stack and API surface
+- [activeContext.md](docs/activeContext.md) — Current development focus and roadmap
+- [progress.md](docs/progress.md) — Feature completeness and release history
 
 ## Changelog
 

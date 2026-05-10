@@ -48,7 +48,7 @@ func startMySQLContainer(t *testing.T) {
 		t.Log("Container 'mysql' is already running.")
 	} else {
 		t.Log("Container 'mysql' is not running. Starting...")
-		runCmd := exec.Command("docker", "run", "--rm", "--name", "mysql_test", "-e", "MYSQL_ROOT_PASSWORD=password", "-p", "3306:3306", "-d", "mysql")
+		runCmd := exec.Command("docker", "run", "--rm", "--name", "mysql_test", "--network", "host", "-e", "MYSQL_ROOT_PASSWORD=password", "-p", "3306:3306", "-d", "mysql")
 		err := runCmd.Run()
 		if err != nil {
 			t.Fatalf("Failed to start MySQL container: %v", err)

@@ -1,5 +1,8 @@
-// Вот корректный пример использования `sqlh.List` с JOIN, основанный на анализе исходного кода:
+// Copyright 2024-2025 Kirill Scherba <kirill@scherba.ru>. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
+// JOIN example: demonstrates querying across related tables using sqlh.
 package main
 
 import (
@@ -9,88 +12,96 @@ import (
 
 	"github.com/kirill-scherba/sqlh"
 	"github.com/kirill-scherba/sqlh/query"
-	_ "modernc.org/sqlite" // Import the sqlite3 driver
+	_ "github.com/mattn/go-sqlite3"
 )
 
-// User — основная таблица
-type User struct {
-	ID   int64  `db:"id" db_key:"not null primary key autoincrement"`
-	Name string `db:"name" db_key:"unique"`
+// UserTable is the users table struct.
+type UserTable struct {
+	ID   int64  `db:"id" db_key:"primary key autoincrement"`
+	Name string `db:"name"`
 }
 
-// Profile — присоединяемая таблица
-type Profile struct {
-	ID     int64  `db:"id" db_key:"not null primary key autoincrement"`
-	UserID int64  `db:"user_id"`
-	Bio    string `db:"bio"`
-}
-
-// UserProfile — составная структура для JOIN.
-// Важно: первое поле — основная структура (users),
-// второе — присоединяемая (profiles).
-// Имена полей не важны, используется порядок.
-type UserProfile struct {
-	User    User
-	Profile Profile
+// OrderTable is the orders table struct.
+type OrderTable struct {
+	ID     int64   `db:"id" db_key:"primary key autoincrement"`
+	UserID int64   `db:"user_id"`
+	Total  float64 `db:"total"`
 }
 
 func main() {
-	db, err := sql.Open("sqlite", "file::memory:?cache=shared")
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	// Создаём таблицы
-	if err := sqlh.Create[User](db); err != nil {
+	// Create tables using sqlh
+	if err := sqlh.Create[UserTable](db); err != nil {
 		log.Fatal(err)
 	}
-	if err := sqlh.Create[Profile](db); err != nil {
+	if err := sqlh.Create[OrderTable](db); err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("Tables created")
 
-	// Вставляем данные
-	sqlh.Insert(db, User{Name: "Alice"})
-	sqlh.Insert(db, User{Name: "Bob"})
-	sqlh.Insert(db, Profile{UserID: 1, Bio: "Alice's bio"})
-	sqlh.Insert(db, Profile{UserID: 2, Bio: "Bob's bio"})
+	// Insert data using sqlh
+	sqlh.Insert(db, UserTable{Name: "Alice"})
+	sqlh.Insert(db, UserTable{Name: "Bob"})
+	sqlh.Insert(db, UserTable{Name: "Charlie"})
+	sqlh.Insert(db, OrderTable{UserID: 1, Total: 100})
+	sqlh.Insert(db, OrderTable{UserID: 1, Total: 200})
+	sqlh.Insert(db, OrderTable{UserID: 2, Total: 150})
+	fmt.Println("Data inserted")
 
-	// List с LEFT JOIN
-	users, _, err := sqlh.ListRows[UserProfile](db, 0, "", "", 10,
-		// Set main table alias to use in Joins
-		sqlh.SetAlias("t"),
-		// Join profile table
-		query.MakeJoin[Profile](query.Join{On: "t.id = o.user_id", Alias: "o"}),
-	)
+	// Method 1: Raw SQL with manual scan
+	rows, err := db.Query(
+		"SELECT u.id AS user_id, u.name, COUNT(o.id) AS orders " +
+			"FROM usertable u LEFT JOIN ordertable o ON u.id = o.user_id " +
+			"GROUP BY u.id ORDER BY u.name")
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer rows.Close()
 
-	for _, up := range users {
-		fmt.Printf("User: %s, Bio: %s\n", up.User.Name, up.Profile.Bio)
+	type UserOrderCount struct {
+		UserID int64
+		Name   string
+		Orders int
+	}
+
+	var results []UserOrderCount
+	for rows.Next() {
+		var r UserOrderCount
+		if err := rows.Scan(&r.UserID, &r.Name, &r.Orders); err != nil {
+			log.Fatal(err)
+		}
+		results = append(results, r)
+	}
+	fmt.Println("Users with order counts (raw SQL + manual scan):")
+	for _, u := range results {
+		fmt.Printf("  %s (ID=%d): %d orders\n", u.Name, u.UserID, u.Orders)
+	}
+
+	// Method 2: Using ListRange with embedded struct for JOIN
+	type UserWithOrders struct {
+		*UserTable
+		*OrderTable
+	}
+
+	// Generate JOIN statement using query.Select
+	join := query.MakeJoin[OrderTable](query.Join{
+		Alias: "o",
+		Join:  "left",
+		On:    "t.id = o.user_id",
+	})
+
+	// Use ListRange with GROUP BY and COUNT — for simplicity iterate and group
+	fmt.Println("\nAll users and their orders (ListRange with JOIN):")
+	for i, row := range sqlh.ListRange[UserWithOrders](
+		db, 0, "t.id", "t.name ASC", 10,
+		sqlh.SetAlias("t"),
+		join,
+	) {
+		fmt.Printf("  [%d] User: %s, OrderID: %d\n", i, row.UserTable.Name, row.OrderTable.ID)
 	}
 }
-
-/**
-
-**Ключевые моменты:**
-
-1. **Составная структура `UserProfile`** — первое поле `User` (основная таблица), второе `Profile` (JOIN-таблица). Функция `fields()` рекурсивно обходит вложенные структуры: если `i == 0` и поле — структура, она "ныряет" внутрь неё.
-
-2. **`query.Join`** передаётся как variadic attribute:
-   - `Join: "LEFT"` → генерируется `"LEFT join"` (Join поле конкатенируется с `" join"`)
-   - `Name` — имя таблицы через `query.Name[Profile]()` (возвращает `"profile"`)
-   - `Alias` — алиас для условий и префиксов полей
-   - `On` — условие соединения
-   - `Fields` — поля из JOIN-таблицы; `query.MakeJoin[Profile](query.Join{Alias: "p"})` автоматически заполняет поля с префиксом алиаса
-
-3. **Сгенерированный SQL:**
-   ```sql
-   SELECT user.id, user.name, p.id, p.user_id, p.bio
-   FROM user LEFT join profile p on user.id = p.user_id
-   ```
-
-4. **Важно:** Без `MakeJoin` можно указать поля вручную:
-   ```go
-   Fields: []string{"p.id", "p.user_id", "p.bio"},
-*/

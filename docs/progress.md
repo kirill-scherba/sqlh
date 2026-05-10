@@ -12,6 +12,17 @@
 - **Update**: `Update[T]()` updates rows matching WHERE conditions — ✅ functional
 - **Delete**: `Delete[T]()` deletes rows matching WHERE conditions — ✅ functional
 - **Set**: `Set[T]()` upserts (SELECT-then-INSERT/UPDATE) — ✅ functional
+- **Paginator**: `NewPaginator` for page/limit/offset calculation — ✅ functional
+
+### Documentation & Examples
+- **Example functions**: `sqlh_example_test.go` with `Example_` functions for pkg.go.dev — ✅ created
+- **SKILL.md**: AI-assistant user guide with quick reference and important rules — ✅ created
+- **examples/basic/**: Insert, Get, List, Update, Delete demo — ✅ created
+- **examples/join/**: JOIN queries with nested structs — ✅ created
+- **examples/paginator/**: Pagination with `NewPaginator` — ✅ created
+- **examples/set/**: Upsert via `Set` — ✅ created
+- **examples/iterators/**: `ListRange` with Go 1.25 iterators — ✅ created
+- **examples/context/**: Context cancellation with `ListRange` — ✅ created
 
 ### Query Generation
 - **CREATE TABLE**: Auto-generates from struct tags — ✅ tested
@@ -94,6 +105,9 @@
 | Bool field scanning fix | ✅ Complete | v0.2.1 |
 | ListRange (Go 1.25 iterator) | ✅ Complete | v0.2.2 |
 | Expanded arg types | ✅ Complete | v0.2.2 |
+| Paginator | ✅ Complete | v0.2.2 |
+| SKILL.md (AI-assistant user guide) | ✅ Complete | — |
+| Examples (basic, join, paginator, set, iterators, context) | ✅ Complete | — |
 | Context propagation to all functions | ❌ Not started | — |
 | Advanced WHERE (OR, IN, LIKE, IS NULL) | ❌ Not started | — |
 | Flexible SELECT columns | ❌ Not started | — |
@@ -108,7 +122,8 @@
 
 - **Test Coverage**: SQLite tests pass, Query generation tests pass, Table wrapper tests pass
 - **MySQL Tests**: ⚠️ Requires manual external setup
-- **Documentation**: CHANGELOG.md, README.md, ROADMAP.md present
+- **Documentation**: CHANGELOG.md, README.md, ROADMAP.md, SKILL.md present
+- **Examples**: 6 runnable programs in examples/ directory
 - **Backward Compatibility**: Public API changes limited; deprecated items tracked in CHANGELOG
 
 ## Next Milestones
