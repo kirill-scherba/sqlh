@@ -1,3 +1,8 @@
+// Copyright 2024-2025 Kirill Scherba <kirill@scherba.ru>. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
 package sqlh
 
 import (
@@ -26,10 +31,11 @@ func CreateTable[T any](db *sql.DB) (t *Table[T], err error) {
 	return &Table[T]{db}, Create[T](db)
 }
 
-// Close closes the database connection associated with the Table[T].
-// It is a no-op if the associated database connection is already closed.
+// Close is a no-op. It does not close the underlying database connection
+// because *sql.DB is a connection pool that may be shared between multiple
+// tables. The connection should be closed by the caller who created it.
 func (t *Table[T]) Close() {
-	t.db.Close()
+	// Intentionally empty: do not close a shared *sql.DB pool.
 }
 
 // Insert inserts rows into the T database table.
