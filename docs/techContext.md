@@ -16,14 +16,15 @@
 - **Go Version**: 1.25.2 (from `go.mod`)
 - **Module Path**: `github.com/kirill-scherba/sqlh`
 - **Repository**: `git@github.com:kirill-scherba/sqlh.git`
-- **Latest Commit**: `59d72a183364e64fcf733216070725bedb80224f`
+- **Latest Main Tag**: `v0.5.1`
+- **Active Branch**: `feature/metadata_cache`
 
 ## Project Dependencies
 
-```
+```gomod
 # Direct
 github.com/go-sql-driver/mysql v1.9.3
-github.com/mattn/go-sqlite3 v1.14.28
+github.com/mattn/go-sqlite3 v1.14.44
 github.com/stretchr/testify v1.10.0
 
 # Indirect
@@ -46,8 +47,10 @@ func Insert[T any](db *sql.DB, rows ...T) error
 func InsertId[T any](db *sql.DB, rows ...T) (int64, error)
 func InsertWithCallback[T any](db *sql.DB, callback func(*sql.DB, *sql.Tx) error, rows ...T) error
 func Get[T any](db *sql.DB, wheres ...Where) (*T, error)
-func List[T any](db *sql.DB, previous int, groupBy, orderBy string, numRows int, listAttrs ...any) ([]T, error)
-func ListRange[T any](db *sql.DB, previous int, groupBy, orderBy string, numRows int, listAttrs ...any) iter.Seq2[T, error]
+func List[T any](db querier, previous int, groupBy, orderBy string, listAttrs ...any) ([]T, int, error)
+func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows int, listAttrs ...any) ([]T, int, error)
+func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int, listAttrs ...any) iter.Seq2[int, T]
+func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Seq[T]
 func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) error
 func Delete[T any](db *sql.DB, wheres ...Where) error
 func Set[T any](db *sql.DB, row T, wheres ...Where) error
@@ -60,9 +63,9 @@ func (t *Table[T]) InsertId(rows ...T) (int64, error)
 func (t *Table[T]) Update(attrs ...UpdateAttr[T]) error
 func (t *Table[T]) Set(row T, wheres ...Where) error
 func (t *Table[T]) Get(wheres ...Where) (*T, error)
-func (t *Table[T]) List(previous int, groupBy, orderBy string, numRows int, listAttrs ...any) ([]T, error)
 func (t *Table[T]) Delete(wheres ...Where) error
-func (t *Table[T]) ListRange(previous int, groupBy, orderBy string, numRows int, listAttrs ...any) iter.Seq2[T, error]
+func (t *Table[T]) Count(wheres ...Where) (int, error)
+func (t *Table[T]) List(offset int, groupBy, orderBy string, limit int, listAttrs ...any) iter.Seq2[int, T]
 func (t *Table[T]) Close()
 
 // Utilities
@@ -123,9 +126,12 @@ type SelectAttr struct {
     Name       *string
 }
 type Join struct {
-    Type  string    // "LEFT", "INNER", etc.
-    Table string    // table name
-    On    []string  // ON conditions
+    Join   string   // "left", "inner", etc.
+    Name   string   // table name
+    Alias  string   // table alias
+    On     string   // ON condition
+    Fields []string // selected join fields
+    Select string   // optional subquery
 }
 type Paginator struct {
     Offset int
@@ -138,16 +144,16 @@ type Paginator struct {
 ### Detected Drivers
 
 | Driver | Driver Name Pattern | last_insert_rowid Query |
-|--------|-------------------|------------------------|
+| -------- | ------------------- | ------------------------ |
 | SQLite | `sqlite` | `SELECT last_insert_rowid()` |
-| MySQL  | `mysql` | `SELECT LAST_INSERT_ID()` |
+| MySQL | `mysql` | `SELECT LAST_INSERT_ID()` |
 | PostgreSQL | `postgres` | `SELECT currval(...)` |
 | SQL Server | `sqlserver` | `SELECT SCOPE_IDENTITY()` |
 
 ### SQL Type Mapping
 
 | Go Type | SQL Type (default) |
-|---------|-------------------|
+| --------- | ------------------- |
 | int, int8, int16, int32, int64 | integer |
 | uint8 | tinyint |
 | uint, uint16, uint32, uint64 | bigint |
@@ -163,21 +169,23 @@ All types can be overridden via `db_type` struct tag.
 ## Testing
 
 Tests cover:
+
 1. **SQLite in-memory database** (primary test target in `sqlh_test.go`)
 2. **MySQL database** (environment-specific in `sqlh_mysql_test.go`)
 3. **Query generation** (in `query/sqlh_test.go`)
 4. **Table wrapper** (in `table_test.go`)
 
 Run tests:
+
 ```bash
 go test ./...
-# MySQL tests (requires running MySQL instance):
-go test -tags mysql ./...
+# MySQL tests may start or reuse a Docker container and can need a long startup wait.
+go test ./...
 ```
 
 ## Current Limitations
 
-1. `context.Context` support is partially implemented (available in some functions via attributes, not fully propagated to all)
+1. `context.Context` support is partially implemented (available in read paths via attributes, not fully propagated to writes)
 2. No native `UPSERT` (uses `Set` with SELECT-then-INSERT/UPDATE pattern)
 3. JOIN support is basic (single Join per query, composite struct scanning required)
 4. No aggregate functions (GROUP BY, HAVING, SUM, AVG)

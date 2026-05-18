@@ -4,7 +4,7 @@
 
 `sqlh` follows a layered architecture with two main packages:
 
-```
+```txt
 ┌─────────────────────────────────────────────────────┐
 │                   sqlh package                       │
 │  (High-level CRUD: Insert, Get, List, Update,       │
@@ -12,7 +12,7 @@
 ├─────────────────────────────────────────────────────┤
 │                   query package                      │
 │  (SQL query generation: Table, Insert, Select,      │
-│   Update, Delete query builders)                    │
+│   Update, Delete query builders, metadata cache)    │
 ├─────────────────────────────────────────────────────┤
 │              database/sql (std library)              │
 │  (Connection pool, raw query execution)             │
@@ -21,7 +21,7 @@
 
 ## Package Structure
 
-```
+```txt
 sqlh/
 ├── sqlh_exec.go          # Core CRUD functions (Insert, Get, List, Update, Delete, Set)
 ├── sqlh_table.go         # Table[T] wrapper type with method-based API
@@ -30,6 +30,7 @@ sqlh/
 ├── table_test.go         # Table type tests
 ├── query/
 │   ├── sqlh_query.go     # SQL query generation (Select, Insert, Update, Delete, Table)
+│   ├── sqlh_meta_cache.go # Cached reflection metadata
 │   └── sqlh_test.go      # Query generation tests
 ├── CHANGELOG.md
 ├── README.md
@@ -45,7 +46,9 @@ All public functions are generic over type parameter `T any`, where `T` is a str
 ```go
 func Insert[T any](db *sql.DB, rows ...T) (err error)
 func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error)
-func List[T any](db *sql.DB, previous int, groupBy, orderBy string, numRows int, listAttrs ...any) (rows []T, err error)
+func List[T any](db querier, previous int, groupBy, orderBy string, listAttrs ...any) (rows []T, pagination int, err error)
+func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows int, listAttrs ...any) (rows []T, pagination int, err error)
+func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int, listAttrs ...any) iter.Seq2[int, T]
 ```
 
 The `Table[T]` wrapper provides a method-based API for convenience:
@@ -60,19 +63,20 @@ func (t *Table[T]) Get(wheres ...Where) (row *T, err error)
 
 ### 2. Reflection-Based Query Generation
 
-The `query` package uses `reflect` to inspect struct fields at runtime and generate SQL statements. Key reflection functions:
+The `query` package uses `reflect` to inspect struct fields at runtime and generate SQL statements. Reflection metadata is cached by `reflect.Type` so repeated query generation and scan/apply paths reuse table names, field lists, and field flags. Key reflection functions:
 
 - **`getFieldName`**: Extracts column name from `db` struct tag (falls back to lowercase field name)
 - **`getFieldType`**: Infers SQL type from Go type via `db_type` tag or automatic mapping (e.g., `int` → `integer`, `string` → `text`)
 - **`getFieldKey`**: Processes `db_key` tag for SQL constraints (`primary key`, `autoincrement`, `unique`, `not null`)
 - **`fieldsList`**: Collects all field names from a struct, supporting nested structs for JOINs
 - **`Args` / `ArgsAppay`**: Marshal/unmarshal struct fields to/from `[]any` for `database/sql` scanning
+- **`getMeta`**: Returns cached struct metadata used by `Name`, `fields`, `Args`, and `ArgsAppay`
 
 ### 3. Transactional Write Pattern
 
 All write operations follow a consistent pattern:
 
-```
+```txt
 Begin Transaction → Prepare Statement → Execute → Commit (or Rollback on error)
 ```
 
@@ -97,8 +101,7 @@ type WheresJoinOr bool
 type Distinct bool
 type Alias string
 type Name *string
-type query.Join struct { Type string; Table string; On []string }
-type query.Paginator struct { Offset int; Limit int }
+type query.Join struct { Join string; Name string; Alias string; On string; Fields []string; Select string }
 ```
 
 The `listStatement` function parses these attributes by type-switching:
@@ -146,11 +149,11 @@ Three layers of execution (`execDb`, `execStmt`, `execTx`) all delegate to `exec
 
 ### 7. Iterator Pattern (Go 1.25)
 
-`ListRange` uses Go 1.25's `iter.Seq` for lazy iteration over query results:
+`ListRange` uses Go 1.25's `iter.Seq2` for lazy iteration over query results. Errors are delivered through an optional `func(error)` attribute.
 
 ```go
-func ListRange[T any](db *sql.DB, previous int, groupBy, orderBy string, numRows int, listAttrs ...any) iter.Seq2[T, error] {
-    return func(yield func(T, error) bool) {
+func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int, listAttrs ...any) iter.Seq2[int, T] {
+    return func(yield func(int, T) bool) {
         // Execute query, iterate rows.Scan, yield each row
     }
 }
@@ -168,13 +171,17 @@ func InsertWithCallback[T any](db *sql.DB, callback func(*sql.DB, *sql.Tx) error
 
 Functions optionally accept `context.Context` as an attribute. The `getErrfuncAndCtx` helper extracts context and error callback from variadic arguments, defaulting to `context.Background` and no-op error handler.
 
+### 10. Metadata Cache
+
+The `query` package caches reflection metadata in `sync.Map` keyed by `reflect.Type`. This avoids rebuilding table names, field lists, autoincrement flags, and scan metadata on every query. Composite JOIN wrapper compatibility is preserved: if the first field is a struct or pointer-to-struct, that first field defines the base table name and base projection. Ordinary `time.Time` fields are excluded from composite detection.
+
 ## Data Flow Example: `Get` Operation
 
-```
+```txt
 User calls: sqlh.Get[User](db, Where{Field: "id=", Value: 1})
 
 1. query.Select[User](attr)  →  generates "SELECT id, name, email FROM user WHERE id=? LIMIT 2"
-2. db.Query(selectStmt, args) → executes query with args [1]
+2. db.QueryContext(ctx, selectStmt, args) → executes query with args [1]
 3. rows.Next() → iterate result set
 4. rows.Scan(&user.ID, &user.Name, &user.Email) → scan into struct fields
 5. Return &user (pointer) or sql.ErrNoRows / ErrMultipleRowsFound
@@ -183,7 +190,7 @@ User calls: sqlh.Get[User](db, Where{Field: "id=", Value: 1})
 ## Design Decisions
 
 | Decision | Rationale |
-|----------|-----------|
+| ---------- | ----------- |
 | Generics vs interface{} | Compile-time type safety, cleaner API, no type assertions |
 | Reflection at call-time | Simplicity over code generation; acceptable for CRUD latency |
 | `*T` return in Get | Clear sematics for "not found" vs zero-value; matches Go patterns |
@@ -196,7 +203,7 @@ User calls: sqlh.Get[User](db, Where{Field: "id=", Value: 1})
 
 - Context.Context propagation to all functions
 - Native UPSERT (ON CONFLICT DO UPDATE)
-- JOIN support for composite structs
+- JOIN support ergonomics for composite structs
 - Aggregate functions (GROUP BY, HAVING, SUM, AVG)
 - Schema migrations (ALTER TABLE, CREATE INDEX)
 - Raw SQL fragment injection
