@@ -282,49 +282,56 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 		err = tx.Commit()
 	}()
 
-	// Update rows
+	// Update rows. Each iteration uses its own prepared statement and closes
+	// it before moving on so that statement handles do not pile up on the
+	// transaction when many attrs are processed in one call.
 	for _, attr := range attrs {
-
-		// Create where clause
-		var wheres []string
-		for _, where := range attr.Wheres {
-			wheres = append(wheres, where.Field)
-		}
-
-		// Create update statement
-		updateStmt, errUpdate := query.Update[T](wheres...)
-		if errUpdate != nil {
-			err = errUpdate
-			return
-		}
-
-		// Create prepared update statement
-		stmt, errPrepare := tx.Prepare(updateStmt)
-		if errPrepare != nil {
-			err = errPrepare
-			return
-		}
-		defer stmt.Close()
-
-		// Create struct attr.Row field values array
-		args, errArgs := query.Args(attr.Row, forWrite)
-		if errArgs != nil {
-			err = errArgs
-			return
-		}
-
-		// Add where conditions to args array
-		for _, where := range attr.Wheres {
-			args = append(args, where.Value)
-		}
-
-		// Execute update statement
-		_, err = execStmt(stmt, args...)
-		if err != nil {
+		if err = updateOne(tx, attr); err != nil {
 			return
 		}
 	}
 
+	return
+}
+
+// updateOne runs a single UPDATE within the given transaction. It is split
+// out from Update so that the prepared statement is closed at the end of
+// each iteration via a function-scoped defer, instead of accumulating one
+// defer per attribute on the parent Update frame.
+func updateOne[T any](tx *sql.Tx, attr UpdateAttr[T]) (err error) {
+
+	// Create where clause
+	var wheres []string
+	for _, where := range attr.Wheres {
+		wheres = append(wheres, where.Field)
+	}
+
+	// Create update statement
+	updateStmt, err := query.Update[T](wheres...)
+	if err != nil {
+		return
+	}
+
+	// Create prepared update statement
+	stmt, err := tx.Prepare(updateStmt)
+	if err != nil {
+		return
+	}
+	defer stmt.Close()
+
+	// Create struct attr.Row field values array
+	args, err := query.Args(attr.Row, forWrite)
+	if err != nil {
+		return
+	}
+
+	// Add where conditions to args array
+	for _, where := range attr.Wheres {
+		args = append(args, where.Value)
+	}
+
+	// Execute update statement
+	_, err = execStmt(stmt, args...)
 	return
 }
 
