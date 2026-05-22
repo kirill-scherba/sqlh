@@ -7,7 +7,7 @@ description: SQL Helper — Go library for auto-generating SQL queries from stru
 
 ## Overview
 
-**sqlh** is a Go library that auto-generates SQL queries from Go struct tags. Supports SQLite and MySQL.
+**sqlh** is a Go library that auto-generates SQL queries from Go struct tags. Supports SQLite, MySQL, PostgreSQL (partial), and SQL Server (partial).
 
 **Key principles:**
 - **Struct tags define the schema** — `db`, `db_key`, `db_type`
@@ -278,6 +278,7 @@ if listErr != nil {
 
 See `examples/` for runnable programs:
 - `basic/` — Insert, Get, List, Update, Delete
+- `crud/` — Full CRUD workflow example
 - `join/` — JOIN queries with nested structs
 - `paginator/` — Pagination with `ListRows`
 - `set/` — Upsert via `Set`
@@ -286,5 +287,10 @@ See `examples/` for runnable programs:
 
 ## Test Files
 
-- `sqlh_test.go` — SQLite tests
-- `sqlh_mysql_test.go` — MySQL tests (requires external instance)
+- `sqlh_test.go` — SQLite integration tests (CRUD, joins, errors)
+- `sqlh_retry_test.go` — Lock-detection and retry unit tests
+- `sqlh_update_test.go` — Batch Update regression test (200-row)
+- `sqlh_benchmark_test.go` — Performance benchmarks
+- `sqlh_mysql_test.go` — MySQL tests (set `SQLH_MYSQL_TEST=1` to enable)
+- `query/sqlh_test.go` — Query generation unit tests
+- `query/sqlh_meta_cache_test.go` — Metadata cache unit tests
