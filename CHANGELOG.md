@@ -7,6 +7,21 @@ It's intended to be a human-readable history of changes.
 
 ## [Unreleased]
 
+### Added
+
+- `query.ArgsApply` — correctly spelled replacement for the misspelled
+  `query.ArgsAppay`. Both functions have identical behaviour; new code should
+  use `ArgsApply`. (#5)
+- Unit tests for `isAutoIncrement` case-insensitivity, lock-error detection,
+  `execRetries` behaviour, a 200-row `Update` batch regression test, and a
+  compatibility test for the deprecated `ArgsAppay` alias.
+
+### Deprecated
+
+- `query.ArgsAppay` is now a thin wrapper around `query.ArgsApply` and is
+  marked `Deprecated:` for removal in v1.0.0. Existing callers continue to
+  work without changes. (#5)
+
 ### Fixed
 
 - `query.isAutoIncrement` now detects MySQL-style `AUTO_INCREMENT` tags. The
@@ -27,11 +42,6 @@ It's intended to be a human-readable history of changes.
   frame. Per-iteration work is extracted into `updateOne` so that each
   prepared statement is closed before the next attribute is processed,
   preventing handle exhaustion on large batches. (#4)
-
-### Added
-
-- Unit tests for `isAutoIncrement` case-insensitivity, lock-error detection,
-  `execRetries` behaviour, and a 200-row `Update` batch regression test.
 
 ## [v0.2.2] - 2025-10-26
 
