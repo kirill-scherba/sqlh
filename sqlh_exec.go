@@ -764,7 +764,7 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 
 				// Apply scanned values
 				fieldPtr := rowVal.Field(i).Addr()
-				if err := query.ArgsAppay(fieldPtr.Interface(), argsByStruct[i]); err != nil {
+				if err := query.ArgsApply(fieldPtr.Interface(), argsByStruct[i]); err != nil {
 					err = fmt.Errorf("failed to apply scanned values to field %s: %w", fieldPtr, err)
 					errFunc(err)
 					return

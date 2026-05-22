@@ -208,6 +208,33 @@ func TestIsAutoIncrement_caseInsensitive(t *testing.T) {
 	}
 }
 
+// TestArgsAppay_deprecatedAlias verifies that the misspelled ArgsAppay still
+// delegates to ArgsApply for backward compatibility. The alias is scheduled
+// for removal in v1.0.0 — this test should be removed at that point.
+//
+//nolint:staticcheck // intentionally exercises the deprecated alias
+func TestArgsAppay_deprecatedAlias(t *testing.T) {
+	type Row struct {
+		Name string `db:"name"`
+		Age  int64  `db:"age"`
+	}
+
+	args, err := Args(Row{}, false)
+	if err != nil {
+		t.Fatalf("Args: %v", err)
+	}
+	*args[0].(*any) = "Alice"
+	*args[1].(*any) = int64(30)
+
+	var dst Row
+	if err := ArgsAppay(&dst, args); err != nil {
+		t.Fatalf("ArgsAppay (deprecated alias): %v", err)
+	}
+	if dst.Name != "Alice" || dst.Age != 30 {
+		t.Errorf("ArgsAppay did not apply args, got %+v", dst)
+	}
+}
+
 // TestGetMeta_mysqlAutoIncrement verifies that a struct with MySQL-style
 // AUTO_INCREMENT tag has the field excluded from fieldsNoAuto (used for
 // INSERT/UPDATE column lists). This is the integration-level guarantee that

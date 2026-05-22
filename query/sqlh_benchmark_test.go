@@ -66,7 +66,7 @@ func BenchmarkArgsReadAndApply(b *testing.B) {
 		*args[6].(*any) = []byte("payload")
 
 		var dst benchmarkQueryUser
-		benchmarkQueryErr = ArgsAppay(&dst, args)
+		benchmarkQueryErr = ArgsApply(&dst, args)
 		if benchmarkQueryErr != nil {
 			b.Fatal(benchmarkQueryErr)
 		}

@@ -453,7 +453,7 @@ func Delete[T any](wheres ...string) (string, error) {
 //   - If forWrite is true, it returns a slice of values for INSERT/UPDATE,
 //     skipping autoincrement fields.
 //   - If forWrite is false, it returns a slice of pointers to copies of field values for
-//     SELECT (for sql.Scan). These pointers are then used with ArgsAppay to populate the struct.
+//     SELECT (for sql.Scan). These pointers are then used with ArgsApply to populate the struct.
 func Args(row any, forWrite bool) ([]any, error) {
 
 	// Get row value and type from the given row
@@ -503,14 +503,21 @@ func Args(row any, forWrite bool) ([]any, error) {
 	return args, nil
 }
 
-// ArgsAppay sets fields values of the given pointer to struct row from the args
-// array.
+// ArgsApply sets the fields of the given pointer-to-struct row from the args
+// slice produced by Args(row, false). It is the inverse of Args for read
+// operations: after sql.Rows.Scan has filled the placeholder values, ArgsApply
+// copies them back into the typed struct fields.
 //
-// It loops through the given struct fields and sets field values from the
-// corresponding arguments in the given args array.
-// Supported types are string, float64, time.Time, int64 and bool.
-// If unsupported type is found, it returns an error.
-func ArgsAppay(row any, args []any) (err error) {
+// Supported argument types are string, time.Time, bool, float32/float64, all
+// signed and unsigned integer kinds, and []byte. The []byte path also handles
+// conversion to string, complex64/complex128 (gob-decoded) and time.Time
+// (parsed from "2006-01-02 15:04:05"). Any other or nil argument value results
+// in the corresponding struct field being set to its zero value.
+//
+// It returns ErrTypeIsNotStruct if row does not point at a struct, or an error
+// describing the field on a type mismatch in the []byte branch. Panics during
+// reflection are recovered and returned as errors.
+func ArgsApply(row any, args []any) (err error) {
 
 	// Recover from panic
 	defer func() {
@@ -626,6 +633,14 @@ func ArgsAppay(row any, args []any) (err error) {
 	}
 
 	return
+}
+
+// ArgsAppay is a deprecated misspelling of ArgsApply, kept for backward
+// compatibility with code that imported the original typo.
+//
+// Deprecated: use ArgsApply instead. ArgsAppay will be removed in v1.0.0.
+func ArgsAppay(row any, args []any) error {
+	return ArgsApply(row, args)
 }
 
 // convertBytesToTime takes a byte slice and converts it to a time.Time.
