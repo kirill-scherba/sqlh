@@ -23,15 +23,19 @@
 
 ```txt
 sqlh/
-├── sqlh_exec.go          # Core CRUD functions (Insert, Get, List, Update, Delete, Set)
-├── sqlh_table.go         # Table[T] wrapper type with method-based API
-├── sqlh_test.go          # Integration tests
-├── sqlh_mysql_test.go    # MySQL-specific tests
-├── table_test.go         # Table type tests
+├── sqlh_exec.go            # Core CRUD functions (Insert, Get, List, Update, Delete, Set)
+├── sqlh_table.go           # Table[T] wrapper type with method-based API
+├── sqlh_test.go            # Integration tests (SQLite)
+├── sqlh_mysql_test.go      # MySQL-specific tests
+├── sqlh_retry_test.go      # Lock-detection and retry unit tests
+├── sqlh_update_test.go     # Batch Update regression test
+├── sqlh_benchmark_test.go  # Performance benchmarks
+├── table_test.go           # Table type tests
 ├── query/
-│   ├── sqlh_query.go     # SQL query generation (Select, Insert, Update, Delete, Table)
-│   ├── sqlh_meta_cache.go # Cached reflection metadata
-│   └── sqlh_test.go      # Query generation tests
+│   ├── sqlh_query.go       # SQL query generation (Select, Insert, Update, Delete, Table)
+│   ├── sqlh_meta_cache.go  # Cached reflection metadata
+│   ├── sqlh_meta_cache_test.go  # Metadata cache unit tests
+│   └── sqlh_test.go        # Query generation tests
 ├── CHANGELOG.md
 ├── README.md
 └── ROADMAP.md
@@ -69,8 +73,8 @@ The `query` package uses `reflect` to inspect struct fields at runtime and gener
 - **`getFieldType`**: Infers SQL type from Go type via `db_type` tag or automatic mapping (e.g., `int` → `integer`, `string` → `text`)
 - **`getFieldKey`**: Processes `db_key` tag for SQL constraints (`primary key`, `autoincrement`, `unique`, `not null`)
 - **`fieldsList`**: Collects all field names from a struct, supporting nested structs for JOINs
-- **`Args` / `ArgsAppay`**: Marshal/unmarshal struct fields to/from `[]any` for `database/sql` scanning
-- **`getMeta`**: Returns cached struct metadata used by `Name`, `fields`, `Args`, and `ArgsAppay`
+- **`Args` / `ArgsApply`**: Marshal/unmarshal struct fields to/from `[]any` for `database/sql` scanning
+- **`getMeta`**: Returns cached struct metadata used by `Name`, `fields`, `Args`, and `ArgsApply`
 
 ### 3. Transactional Write Pattern
 
@@ -136,13 +140,20 @@ const retryDelay = 100 * time.Millisecond
 func execRetries(f func() (sql.Result, error)) (result sql.Result, err error) {
     for range numRetries {
         result, err = f()
-        if err != nil && err.Error() == "database is locked" {
-            time.Sleep(retryDelay)
-            continue
+        if err == nil {
+            return
         }
-        break
+        if !isLockError(err) {
+            return
+        }
+        time.Sleep(retryDelay)
     }
+    return
 }
+
+// isLockError detects transient "database is locked" / "SQLITE_BUSY" errors
+// using substring matching. Works with wrapped errors.
+func isLockError(err error) bool { ... }
 ```
 
 Three layers of execution (`execDb`, `execStmt`, `execTx`) all delegate to `execRetries`.
@@ -196,7 +207,7 @@ User calls: sqlh.Get[User](db, Where{Field: "id=", Value: 1})
 | `*T` return in Get | Clear sematics for "not found" vs zero-value; matches Go patterns |
 | Variadic attributes | Extensible without breaking API; supports optional features |
 | Auto-transactions | Safety by default; eliminates a common source of bugs |
-| String-based "database is locked" detection | Pragmatic for SQLite; could be improved with driver-specific error types |
+| String-based lock detection | Substring match replaced exact-string match — still not `errors.Is`, but works with wrapped errors; kept driver-agnostic |
 | Two packages (sqlh + query) | Separation of concerns: query generation vs execution logic |
 
 ## Planned Improvements (from ROADMAP)

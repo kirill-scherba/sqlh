@@ -55,4 +55,4 @@ Go developers working with SQL databases face a significant amount of repetitive
 
 ## Project Maturity
 
-Current version v0.5.1 plus active `feature/metadata_cache` branch work — active development with a clear roadmap. The package is functional for basic and intermediate use cases, with planned enhancements for advanced query features, native UPSERT, aggregate functions, and schema migrations.
+Current version v0.5.1 plus active fix branches (Stages 1–4) — active development with a clear roadmap. The package is functional for basic and intermediate use cases, with planned enhancements for advanced query features, native UPSERT, aggregate functions, and schema migrations.

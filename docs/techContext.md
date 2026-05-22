@@ -87,7 +87,9 @@ func Select[T any](attr *SelectAttr) (string, error)
 func Update[T any](attr *UpdateAttr) (string, error)
 func Delete[T any](attr *DeleteAttr) (string, error)
 func Args(value any, forWrite bool) ([]any, error)
-func ArgsAppay(dest any, args []any) error
+func ArgsApply(dest any, args []any) error   // ⬅ new, preferred
+func ArgsAppay(dest any, args []any) error   // Deprecated, use ArgsApply
+func MakeJoin[T any](join Join) Join
 func SetNumRows(n int)
 func GetNumRows() int
 ```
@@ -185,9 +187,11 @@ go test ./...
 
 ## Current Limitations
 
-1. `context.Context` support is partially implemented (available in read paths via attributes, not fully propagated to writes)
+1. `context.Context` support is partially implemented (available in read paths
+   via variadic attributes, not fully propagated to write operations)
 2. No native `UPSERT` (uses `Set` with SELECT-then-INSERT/UPDATE pattern)
-3. JOIN support is basic (single Join per query, composite struct scanning required)
-4. No aggregate functions (GROUP BY, HAVING, SUM, AVG)
-5. No schema migration support (ALTER TABLE)
-6. No raw SQL fragment injection for edge cases
+3. No aggregate functions (GROUP BY, HAVING, SUM, AVG)
+4. No schema migration support (ALTER TABLE)
+5. No raw SQL fragment injection for edge cases
+6. MySQL test requires a running Docker container and is unconditional
+   (planned: gate behind `SQLH_MYSQL_TEST` env var)
