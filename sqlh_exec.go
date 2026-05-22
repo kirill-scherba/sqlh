@@ -166,11 +166,12 @@ func Insert[T any](db *sql.DB, rows ...T) (err error) {
 // the transaction is rolled back. Otherwise, the transaction is committed.
 // The last inserted row ID is returned as a result.
 func InsertId[T any](db *sql.DB, rows ...T) (id int64, err error) {
+	tableName := query.Name[T]()
 	// Call insertWithCallback function
 	err = InsertWithCallback(db,
 		// Callback function which returns last inserted row ID
 		func(db *sql.DB, tx *sql.Tx) error {
-			id, err = getLastInsertID(db, tx)
+			id, err = getLastInsertID(db, tx, tableName)
 			return err
 		},
 		// Rows to insert
@@ -781,9 +782,11 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 
 // getLastInsertID returns the last inserted row ID for the given database
 // connection and transaction. It supports SQLite, MySQL, PostgreSQL and
-// SQL Server. If the database driver is not supported, it returns an
-// error.
-func getLastInsertID(db *sql.DB, tx *sql.Tx) (id int64, err error) {
+// SQL Server. The tableName argument is required for PostgreSQL, which has
+// no global "last insert id" and must look the value up via the table's
+// serial sequence (pg_get_serial_sequence). If the database driver is not
+// supported, it returns an error.
+func getLastInsertID(db *sql.DB, tx *sql.Tx, tableName string) (id int64, err error) {
 
 	// Get driver name
 	driverName := reflect.TypeOf(db.Driver()).String()
@@ -795,7 +798,19 @@ func getLastInsertID(db *sql.DB, tx *sql.Tx) (id int64, err error) {
 	case strings.Contains(driverName, "mysql"):
 		err = tx.QueryRow("SELECT LAST_INSERT_ID()").Scan(&id)
 	case strings.Contains(driverName, "postgres"):
-		err = tx.QueryRow("SELECT currval('table_name_id_seq')").Scan(&id)
+		// PostgreSQL has no session-wide LastInsertId. We look up the
+		// table's serial sequence at runtime instead of hardcoding a name.
+		// The "id" column name is assumed by sqlh convention; tables with a
+		// differently named auto-increment column should use
+		// InsertWithCallback with an explicit RETURNING query instead.
+		if tableName == "" {
+			err = fmt.Errorf("sqlh: PostgreSQL InsertId requires a table name")
+			return
+		}
+		err = tx.QueryRow(
+			"SELECT currval(pg_get_serial_sequence($1, 'id'))",
+			tableName,
+		).Scan(&id)
 	case strings.Contains(driverName, "sqlserver"):
 		err = tx.QueryRow("SELECT SCOPE_IDENTITY()").Scan(&id)
 	default:
