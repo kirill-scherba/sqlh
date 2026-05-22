@@ -88,7 +88,7 @@ The project is at version **v0.5.1** on `main`, with active development on
 
 | # | Issue | Severity | Status |
 |---|-------|----------|--------|
-| 1 | MySQL test starts Docker container unconditionally | Low | ⏳ Planned (Stage 5) |
+| 1 | MySQL test starts Docker container unconditionally | Low | ✅ Fixed (gated behind `SQLH_MYSQL_TEST`, Stage 5) |
 | 2 | Context support partially implemented in write paths | Medium | Known |
 | 3 | JOIN composite struct setup requires manual convention | Low | Known |
 | 4 | Lock-retry `isLockError` still uses string matching | Medium | ✅ Fixed |
@@ -116,7 +116,7 @@ The project is at version **v0.5.1** on `main`, with active development on
 ## Testing Status
 
 - SQLite tests: ✅ Passing (primary test suite)
-- MySQL tests: ⚠️ Requires Docker/MySQL startup wait; will be gated
+- MySQL tests: ✅ Gated behind `SQLH_MYSQL_TEST=1`; runs against Docker container
 - Query generation tests: ✅ Passing
 - Table wrapper tests: ✅ Passing
 - Metadata cache tests: ✅ Passing

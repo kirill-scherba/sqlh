@@ -181,8 +181,8 @@ Run tests:
 
 ```bash
 go test ./...
-# MySQL tests may start or reuse a Docker container and can need a long startup wait.
-go test ./...
+# MySQL tests are gated behind SQLH_MYSQL_TEST:
+SQLH_MYSQL_TEST=1 go test -run TestMySQL ./...
 ```
 
 ## Current Limitations

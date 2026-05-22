@@ -128,7 +128,7 @@
 
 | Issue | Severity | Status |
 |-------|----------|--------|
-| MySQL Docker test is unconditional and fragile; `--network host` + `-p` conflict | Medium | 🚧 Planned (Stage 5) |
+| MySQL Docker test gated behind `SQLH_MYSQL_TEST` env var; `--network host` removed | Medium | ✅ Fixed |
 | Context support partially implemented in write paths | Medium | Known |
 | JOIN composite struct setup requires manual naming convention | Low | Known |
 | PostgreSQL `last_insert_rowid` fixed via `pg_get_serial_sequence` | Medium | ✅ Fixed |
@@ -201,8 +201,8 @@ inside `QueryRange`.
 
 - **Test Coverage**: SQLite tests pass, Query generation tests pass, Table
   wrapper tests pass, metadata cache tests pass, retry logic tests pass
-- **MySQL Tests**: ⚠️ Requires Docker; currently has `--network host` conflict
-  (Stage 5 planned)
+- **MySQL Tests**: ✅ Gated behind `SQLH_MYSQL_TEST=1`; runs against local Docker
+  container with readiness wait
 - **Documentation**: CHANGELOG.md, README.md, ROADMAP.md, SKILL.md, all 6
   Memory Bank files present
 - **Examples**: 7 runnable programs in `examples/` directory (basic, join,
