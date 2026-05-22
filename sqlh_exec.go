@@ -965,20 +965,41 @@ func execTx(tx *sql.Tx, query string, args ...any) (result sql.Result, err error
 
 // execRetries is a helper function to execute a function that
 // returns a sql.Result and error, retrying up to numRetries times
-// in case of a "database is locked" error. It sleeps for retryDelay
-// milliseconds between retries. If the function returns an error
-// that is not "database is locked", it is returned immediately.
+// in case of a transient "database is locked" / busy error. It sleeps
+// for retryDelay between retries. Errors that are not lock-related are
+// returned immediately without retrying.
 func execRetries(f func() (sql.Result, error)) (result sql.Result, err error) {
 	for range numRetries {
 		result, err = f()
-		if err != nil {
-			if err.Error() == "database is locked" {
-				time.Sleep(retryDelay)
-				continue
-			}
+		if err == nil {
 			return
 		}
-		break
+		if !isLockError(err) {
+			return
+		}
+		time.Sleep(retryDelay)
 	}
 	return
+}
+
+// isLockError reports whether err looks like a transient lock or busy
+// error from any supported driver. The check is intentionally string-based
+// because the concrete driver error types are imported as side-effect only
+// blank imports, and we do not want to pull driver packages into the public
+// API of sqlh. It accepts wrapped errors by inspecting the full Error()
+// text.
+func isLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "database is locked"):
+		return true
+	case strings.Contains(msg, "database table is locked"):
+		return true
+	case strings.Contains(msg, "SQLITE_BUSY"):
+		return true
+	}
+	return false
 }
