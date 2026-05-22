@@ -172,3 +172,66 @@ func TestGetMeta_sameNameDifferentPackages(t *testing.T) {
 		t.Errorf("pkg2.User fieldsAll = %v, want %v", meta2.fieldsAll, want2)
 	}
 }
+
+// TestIsAutoIncrement_caseInsensitive verifies that both SQLite-style
+// "autoincrement" and MySQL-style "AUTO_INCREMENT" tags are detected, in any
+// case. This guards the historical regression where the second Contains
+// search was made against an already lower-cased string.
+func TestIsAutoIncrement_caseInsensitive(t *testing.T) {
+	tests := []struct {
+		name   string
+		dbKey  string
+		expect bool
+	}{
+		{"sqlite lower", "autoincrement", true},
+		{"sqlite upper", "AUTOINCREMENT", true},
+		{"sqlite mixed", "AutoIncrement", true},
+		{"sqlite combined", "not null primary key autoincrement", true},
+		{"mysql lower", "auto_increment", true},
+		{"mysql upper", "AUTO_INCREMENT", true},
+		{"mysql mixed", "Auto_Increment", true},
+		{"mysql combined", "not null primary key AUTO_INCREMENT", true},
+		{"none", "not null", false},
+		{"empty", "", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			field := reflect.StructField{
+				Tag: reflect.StructTag(`db_key:"` + tc.dbKey + `"`),
+			}
+			got := isAutoIncrement(field)
+			if got != tc.expect {
+				t.Errorf("isAutoIncrement(%q) = %v, want %v", tc.dbKey, got, tc.expect)
+			}
+		})
+	}
+}
+
+// TestGetMeta_mysqlAutoIncrement verifies that a struct with MySQL-style
+// AUTO_INCREMENT tag has the field excluded from fieldsNoAuto (used for
+// INSERT/UPDATE column lists). This is the integration-level guarantee that
+// the case-folding fix in isAutoIncrement reaches the meta cache.
+func TestGetMeta_mysqlAutoIncrement(t *testing.T) {
+	type MySQLRow struct {
+		ID   int64  `db:"id" db_key:"not null primary key AUTO_INCREMENT"`
+		Name string `db:"name"`
+	}
+
+	meta := getMeta(reflect.TypeOf(MySQLRow{}))
+
+	wantAll := []string{"id", "name"}
+	if !reflect.DeepEqual(meta.fieldsAll, wantAll) {
+		t.Errorf("fieldsAll = %v, want %v", meta.fieldsAll, wantAll)
+	}
+
+	wantNoAuto := []string{"name"}
+	if !reflect.DeepEqual(meta.fieldsNoAuto, wantNoAuto) {
+		t.Errorf("fieldsNoAuto = %v, want %v (id should be excluded as AUTO_INCREMENT)",
+			meta.fieldsNoAuto, wantNoAuto)
+	}
+
+	if !meta.fields[0].isAutoIncrement {
+		t.Error("expected field 0 (ID) to be marked isAutoIncrement for AUTO_INCREMENT tag")
+	}
+}

@@ -655,11 +655,13 @@ func Name[T any]() (name string) {
 }
 
 // isAutoIncrement returns true if the given struct field is tagged with
-// "autoincrement" or "AUTO_INCREMENT". It is used to skip autoincrement fields
-// in INSERT and UPDATE operations.
+// "autoincrement" (SQLite) or "auto_increment" (MySQL). The match is
+// case-insensitive. It is used to skip autoincrement fields in INSERT and
+// UPDATE operations.
 func isAutoIncrement(field reflect.StructField) bool {
-	return strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "autoincrement") ||
-		strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "AUTO_INCREMENT")
+	dbKey := strings.ToLower(field.Tag.Get("db_key"))
+	return strings.Contains(dbKey, "autoincrement") ||
+		strings.Contains(dbKey, "auto_increment")
 }
 
 // This class definition in Go defines an interface named integer that
