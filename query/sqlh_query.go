@@ -452,8 +452,13 @@ func Delete[T any](wheres ...string) (string, error) {
 // The forWrite parameter controls the behavior:
 //   - If forWrite is true, it returns a slice of values for INSERT/UPDATE,
 //     skipping autoincrement fields.
-//   - If forWrite is false, it returns a slice of pointers to copies of field values for
-//     SELECT (for sql.Scan). These pointers are then used with ArgsApply to populate the struct.
+//   - If forWrite is false, it returns a slice of pointers suitable for
+//     sql.Rows.Scan. When row is addressable (passed via a pointer), the
+//     returned pointers point directly to the struct fields, allowing Scan
+//     to write in place with zero per-field allocations. For non-addressable
+//     values (passed by value) the function falls back to pointer-to-copy.
+//     The resulting pointers are then used with ArgsApply to populate (or
+//     re-populate) the struct after scanning.
 func Args(row any, forWrite bool) ([]any, error) {
 
 	// Get row value and type from the given row
@@ -478,16 +483,26 @@ func Args(row any, forWrite bool) ([]any, error) {
 			continue
 		}
 
-		// Create argument
-		arg := rowVal.Field(f.index).Interface()
+		// Fast path: addressable struct in read mode, non-complex field.
+		// Pass a pointer directly to the struct field so that sql.Rows.Scan
+		// writes in place. This avoids boxing the value into interface{} and
+		// then taking the address of a copy — a significant source of per-row
+		// heap allocations in the original code.
+		if !forWrite && rowVal.CanAddr() && !f.isComplex {
+			args = append(args, rowVal.Field(f.index).Addr().Interface())
+			continue
+		}
 
 		// Create argument for complex numbers
+		var arg any
 		if f.isComplex {
 			c := rowVal.Field(f.index).Interface()
 			var buf bytes.Buffer
 			enc := gob.NewEncoder(&buf)
 			enc.Encode(c)
 			arg = buf.Bytes()
+		} else {
+			arg = rowVal.Field(f.index).Interface()
 		}
 
 		// Append argument
@@ -550,51 +565,50 @@ func ArgsApply(row any, args []any) (err error) {
 			return fmt.Errorf("not enough arguments for struct %s", rowVal.Type().Name())
 		}
 
-		// Get the current field and its value from the args
+		// Get the current field and the arg's reflect.Value.
+		// We intentionally avoid .Interface() here: extracting a concrete
+		// value from the arg pointer and re-boxing it into interface{} for
+		// a type switch allocates on the heap for types wider than one
+		// machine word (string, time.Time, []byte). Instead we dispatch on
+		// the Kind directly so the value stays in reflect.Value.
+		//
+		// In the addressable fast path (the common production case reached
+		// via QueryRange), args are typed pointers like *int64, *string, etc.
+		// In the non-addressable fallback, args are *any  (pointer to
+		// interface). The loop below collapses the *any wrapper so that the
+		// rest sees a concrete Kind regardless of which path produced the
+		// args.
 		field := rowVal.Field(f.index)
-		arg := reflect.ValueOf(args[argIdx]).Elem().Interface()
+		argVal := reflect.ValueOf(args[argIdx]).Elem()
+		for argVal.Kind() == reflect.Interface {
+			argVal = argVal.Elem()
+		}
 		argIdx++
 
-		// Set the field value based on the type of the argument
-		switch v := arg.(type) {
+		switch argVal.Kind() {
 
-		case string:
-			field.SetString(v)
+		case reflect.String:
+			field.SetString(argVal.String())
 
-		case time.Time:
-			field.Set(reflect.ValueOf(v))
+		case reflect.Struct:
+			// time.Time or other struct — set the whole value.
+			field.Set(argVal)
 
-		case bool:
-			field.SetBool(v)
+		case reflect.Bool:
+			field.SetBool(argVal.Bool())
 
-		case float64:
-			field.SetFloat(v)
-		case float32:
-			field.SetFloat(float64(v))
+		case reflect.Float32, reflect.Float64:
+			field.SetFloat(argVal.Float())
 
-		case int:
-			setInt(field, v)
-		case int8:
-			setInt(field, v)
-		case int16:
-			setInt(field, v)
-		case int32:
-			setInt(field, v)
-		case int64:
-			setInt(field, v)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			setInt(field, argVal.Int())
 
-		case uint:
-			setInt(field, v)
-		case uint8:
-			setInt(field, v)
-		case uint16:
-			setInt(field, v)
-		case uint32:
-			setInt(field, v)
-		case uint64:
-			setInt(field, v)
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			setInt(field, argVal.Uint())
 
-		case []byte:
+		case reflect.Slice:
+			// Must be []byte (the only slice type drivers produce).
+			v := argVal.Bytes()
 			switch {
 
 			// Ensure the target field in the struct is also []byte
@@ -626,8 +640,8 @@ func ArgsApply(row any, args []any) (err error) {
 			}
 
 		default:
-			// When unsupported type is found, it may be nil, we set zero
-			// to this field (zero value of v's type)
+			// When unsupported type is found (including nil), set zero
+			// value to this field.
 			field.SetZero()
 		}
 	}

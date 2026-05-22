@@ -22,6 +22,18 @@ It's intended to be a human-readable history of changes.
   marked `Deprecated:` for removal in v1.0.0. Existing callers continue to
   work without changes. (#5)
 
+### Performance
+
+- `query.Args(row, false)` now uses the addressability of the struct to pass
+  typed pointers directly to struct fields instead of boxing values into
+  `interface{}` and copying. When the struct is addressable (passed by pointer,
+  the common case through `QueryRange`), this eliminates all per-field heap
+  allocations, reducing the read+apply pipeline from 13 to 4 allocs/op
+  (−69 %) on the benchmark and to approximately 2 allocs/op in the production
+  `QueryRange` code path. The non-addressable fallback (by-value struct) also
+  benefits from the reflect.Kind-based dispatch in `ArgsApply`, which avoids
+  an intermediate `interface{}` boxing step. (#6)
+
 ### Fixed
 
 - `query.isAutoIncrement` now detects MySQL-style `AUTO_INCREMENT` tags. The

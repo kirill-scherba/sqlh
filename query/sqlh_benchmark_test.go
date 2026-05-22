@@ -5,6 +5,7 @@
 package query
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
@@ -46,7 +47,10 @@ func BenchmarkArgsWrite(b *testing.B) {
 	}
 }
 
-func BenchmarkArgsReadAndApply(b *testing.B) {
+// BenchmarkArgsReadApply_value benchmarks Args+ArgsApply when the source
+// struct is passed by value (non-addressable). This exercises the fallback
+// copy path and reflects the pre-optimisation baseline.
+func BenchmarkArgsReadApply_value(b *testing.B) {
 	src := benchmarkQueryUser{}
 
 	b.ReportAllocs()
@@ -64,6 +68,52 @@ func BenchmarkArgsReadAndApply(b *testing.B) {
 		*args[4].(*any) = 98.5
 		*args[5].(*any) = time.Unix(1_700_000_000, 0)
 		*args[6].(*any) = []byte("payload")
+
+		var dst benchmarkQueryUser
+		benchmarkQueryErr = ArgsApply(&dst, args)
+		if benchmarkQueryErr != nil {
+			b.Fatal(benchmarkQueryErr)
+		}
+	}
+}
+
+// BenchmarkArgsReadApply_addr benchmarks Args+ArgsApply when the source
+// struct is passed by pointer (addressable). This exercises the fast path
+// where Args returns typed pointers directly to the struct fields,
+// eliminating per-field heap allocations. This is the typical code path
+// taken inside QueryRange.
+func BenchmarkArgsReadApply_addr(b *testing.B) {
+	row := &benchmarkQueryUser{}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		args, err := Args(row, false)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		// Simulate sql.Rows.Scan: write typed values through the
+		// pointers that Args returned.
+		for i, arg := range args {
+			elem := reflect.ValueOf(arg).Elem()
+			switch i {
+			case 0:
+				elem.SetInt(42)
+			case 1:
+				elem.SetString("Alice")
+			case 2:
+				elem.SetString("alice@example.com")
+			case 3:
+				elem.SetBool(true)
+			case 4:
+				elem.SetFloat(98.5)
+			case 5:
+				elem.Set(reflect.ValueOf(time.Unix(1_700_000_000, 0)))
+			case 6:
+				elem.SetBytes([]byte("payload"))
+			}
+		}
 
 		var dst benchmarkQueryUser
 		benchmarkQueryErr = ArgsApply(&dst, args)
