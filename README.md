@@ -2,6 +2,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/kirill-scherba/sqlh)](https://goreportcard.com/report/github.com/kirill-scherba/sqlh)
 [![GoDoc](https://godoc.org/github.com/kirill-scherba/sqlh?status.svg)](https://godoc.org/github.com/kirill-scherba/sqlh/)
+[![Test](https://github.com/kirill-scherba/sqlh/actions/workflows/test.yml/badge.svg)](https://github.com/kirill-scherba/sqlh/actions/workflows/test.yml)
 
 `sqlh` is a lightweight helper package for Go that simplifies interactions with SQL databases. It leverages **Go generics (Go 1.25+)** to provide type-safe CRUD functions (`Insert`, `Get`, `List`, `Update`, `Delete`, `Set`) that work directly with your Go structs, automatically generating SQL queries from struct definitions using struct tags — reducing boilerplate code by 60-80%.
 
@@ -19,7 +20,15 @@
 - **DISTINCT, Alias, Custom Table Names:** Flexible query attributes for advanced SELECT queries.
 - **Standardized Error Handling:** Returns `sql.ErrNoRows` and exported package errors (`ErrWhereClauseRequired`, `ErrMultipleRowsFound`, etc.) for easy checking with `errors.Is`.
 - **Context Support:** Functions optionally accept `context.Context` for timeouts and cancellations.
-- **Database-Agnostic:** Works with SQLite, MySQL, PostgreSQL, and SQL Server (driver-detected `last_insert_rowid`).
+
+## Database Support
+
+| Database  | Status       | CI  | Notes                        |
+|-----------|--------------|-----|------------------------------|
+| SQLite    | **Tested**   | ✅  | Full CRUD tested on every CI |
+| MySQL     | **Tested**   | ✅  | Opt-in via `SQLH_MYSQL_TEST` / service container |
+| PostgreSQL| **Tested**   | ✅  | Opt-in via `SQLH_TEST_POSTGRES=1` / service container |
+| SQL Server| Experimental | ❌   | `getLastInsertID` support only; no integration tests |
 
 ## Installation
 
@@ -248,6 +257,22 @@ type Product struct {
 func (Product) TableName() string { return "my_products" }
 // Generates: CREATE TABLE IF NOT EXISTS my_products (...)
 ```
+
+## SQL Fragment Safety
+
+sqlh parameterizes **values**, but not **SQL identifiers or SQL fragments**.
+
+The following fields are embedded directly into SQL and **must be trusted constants**
+(never user-supplied without validation):
+
+- `Where.Field` — column name and operator (e.g. `"name="`, `"id IN"`)
+- `orderBy` — ORDER BY clause
+- `groupBy` — GROUP BY clause
+- `Join.On` — JOIN ON condition
+- `SetAlias` — table alias
+- `SetName` — table name override
+
+User-provided values must go through `Where.Value` or standard query arguments.
 
 ## Documentation
 

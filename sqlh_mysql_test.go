@@ -140,12 +140,13 @@ func TestMySQL(t *testing.T) {
 		t.Skip("MySQL tests disabled; set SQLH_MYSQL_TEST=1 to enable")
 	}
 
-	startMySQLContainer(t)
+	// Use custom DSN from env if provided, or start Docker container.
+	dsn := os.Getenv("SQLH_MYSQL_DSN")
+	if dsn == "" {
+		startMySQLContainer(t)
+		dsn = "root:password@tcp(localhost:3306)/mysql"
+	}
 
-	// Open a connection to the *running* MySQL (root@localhost:3306) and
-	// wait for readiness. The /mysql database exists by default in the
-	// official mysql image.
-	dsn := "root:password@tcp(localhost:3306)/mysql"
 	readyDB := waitMySQLReady(t, dsn)
 	readyDB.Close()
 
