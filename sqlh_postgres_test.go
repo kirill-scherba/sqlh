@@ -159,10 +159,12 @@ func TestPostgreSQL(t *testing.T) {
 		t.Skip("PostgreSQL tests disabled; set SQLH_TEST_POSTGRES=1 to enable")
 	}
 
-	startPostgresContainer(t)
-
-	// Open a connection to the running PostgreSQL and wait for readiness.
-	dsn := "host=localhost port=5432 user=postgres password=password dbname=postgres sslmode=disable"
+	// Use custom DSN from env if provided, or start Docker container.
+	dsn := os.Getenv("SQLH_POSTGRES_DSN")
+	if dsn == "" {
+		startPostgresContainer(t)
+		dsn = "host=localhost port=5432 user=postgres password=password dbname=postgres sslmode=disable"
+	}
 	readyDB := waitPostgresReady(t, dsn)
 	readyDB.Close()
 
