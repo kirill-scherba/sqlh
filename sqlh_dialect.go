@@ -21,17 +21,10 @@ const (
 	dialectSQLServer  = "sqlserver"
 )
 
-var (
-	// cachedDialect is set by detectDialect whenever a *sql.DB is passed to
-	// any sqlh function. It is used by rebindIfPG to decide whether ? → $N
-	// placeholder conversion is needed.
-	cachedDialect string
-)
-
-// detectDialect detects the database dialect from the driver type and sets
-// the cachedDialect global. It's called at the beginning of every top-level
-// function that receives a *sql.DB.
-func detectDialect(db *sql.DB) {
+// detectDialect detects the database dialect from the driver type. It
+// inspects the registered driver name via reflection and returns one of the
+// dialect constants. This is a pure function with no side effects.
+func detectDialect(db *sql.DB) string {
 	driverName := reflect.TypeOf(db.Driver()).String()
 	driverName = strings.ToLower(driverName)
 
@@ -39,23 +32,35 @@ func detectDialect(db *sql.DB) {
 	case strings.Contains(driverName, "postgres"),
 		strings.Contains(driverName, "pq"),
 		strings.Contains(driverName, "pgx"):
-		cachedDialect = dialectPostgreSQL
+		return dialectPostgreSQL
 	case strings.Contains(driverName, "mysql"):
-		cachedDialect = dialectMySQL
+		return dialectMySQL
 	case strings.Contains(driverName, "sqlite"):
-		cachedDialect = dialectSQLite
+		return dialectSQLite
 	case strings.Contains(driverName, "sqlserver"),
 		strings.Contains(driverName, "mssql"):
-		cachedDialect = dialectSQLServer
+		return dialectSQLServer
 	default:
-		cachedDialect = dialectSQLite
+		return dialectSQLite
 	}
 }
 
-// rebindIfPG converts ? placeholders to PostgreSQL $N style when the cached
-// dialect is PostgreSQL. For all other dialects the SQL is returned unchanged.
-func rebindIfPG(sql string) string {
-	if cachedDialect == dialectPostgreSQL {
+// dialectFromQuerier attempts to extract the database dialect from a querier.
+// If the querier is a *sql.DB, the dialect is detected via detectDialect.
+// For *sql.Tx (which does not expose a Driver()) the function returns
+// dialectSQLite as a safe default. Callers that know the dialect (e.g. from a
+// surrounding *sql.DB call) should use the non-exported overloads instead.
+func dialectFromQuerier(q querier) string {
+	if db, ok := q.(*sql.DB); ok {
+		return detectDialect(db)
+	}
+	return dialectSQLite
+}
+
+// rebind converts ? placeholders to PostgreSQL $N style when dialect is
+// PostgreSQL. For all other dialects the SQL is returned unchanged.
+func rebind(sql string, dialect string) string {
+	if dialect == dialectPostgreSQL {
 		return query.Rebind(sql)
 	}
 	return sql

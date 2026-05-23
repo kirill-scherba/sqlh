@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -97,6 +98,35 @@ func waitPostgresReady(t *testing.T, dsn string) *sql.DB {
 	return nil
 }
 
+// replaceDBName replaces the database name in a PostgreSQL DSN with the given
+// new name. Supports both key=value and URI-style DSNs:
+//
+//	key=value: "host=localhost dbname=postgres" → "host=localhost dbname=test"
+//	URI:       "postgres://user:pass@host/db"   → "postgres://user:pass@host/test"
+func replaceDBName(dsn, newDBName string) string {
+	// Try URI-style first (contains ://)
+	if strings.Contains(dsn, "://") {
+		// Replace the last path segment (the database name).
+		// A URI like postgres://user:pass@host:5432/postgres?sslmode=disable
+		// should become postgres://user:pass@host:5432/test?sslmode=disable
+		idx := strings.LastIndex(dsn, "/")
+		if idx >= 0 {
+			rest := dsn[idx+1:]
+			// Find where the query string starts (if any)
+			qIdx := strings.Index(rest, "?")
+			if qIdx >= 0 {
+				return dsn[:idx+1] + newDBName + rest[qIdx:]
+			}
+			return dsn[:idx+1] + newDBName
+		}
+		return dsn
+	}
+
+	// key=value format: replace dbname=<current> with dbname=<new>
+	re := regexp.MustCompile(`\bdbname=\S+`)
+	return re.ReplaceAllString(dsn, "dbname="+newDBName)
+}
+
 // newPostgresDB opens a PostgreSQL connection, creates the test database if it
 // does not exist, drops existing tables, creates fresh test tables, and
 // returns the connection.
@@ -115,8 +145,9 @@ func newPostgresDB(driverName, dataSourceName string) (db *sql.DB, err error) {
 	}
 	db.Close()
 
-	// Reconnect to the test database using key=value DSN format.
-	testDSN := "host=localhost port=5432 user=postgres password=password dbname=test sslmode=disable"
+	// Reconnect to the test database, preserving host/port/user/password/sslmode
+	// from the original DSN by replacing only the database name.
+	testDSN := replaceDBName(dataSourceName, "test")
 	db, err = sql.Open(driverName, testDSN)
 	if err != nil {
 		return nil, err
@@ -377,6 +408,52 @@ func TestPostgreSQL(t *testing.T) {
 		}
 		require.NoError(t, iterErr)
 		assert.True(t, found, "expected to find JoinUser in joined result")
+	})
+
+	t.Run("DirectReadsWithoutPriorWrite", func(t *testing.T) {
+		// Create a fresh table for this sub-test so we start empty.
+		type DirectReadTest struct {
+			ID   int64  `db:"id" db_type:"SERIAL"`
+			Name string `db:"name" db_key:"not null"`
+		}
+		createStmt, err := query.TablePG[DirectReadTest]()
+		require.NoError(t, err)
+		_, err = db.Exec(createStmt)
+		require.NoError(t, err)
+		defer db.Exec("DROP TABLE IF EXISTS directreadtest")
+
+		// Insert data separately, then test direct reads.
+		err = Insert(db, DirectReadTest{Name: "Alpha"})
+		require.NoError(t, err)
+		err = Insert(db, DirectReadTest{Name: "Beta"})
+		require.NoError(t, err)
+
+		// List — direct read after inserts in a separate call path.
+		rows, _, err := List[DirectReadTest](db, 0, "", "name ASC")
+		require.NoError(t, err)
+		assert.Len(t, rows, 2)
+
+		// Count — direct read.
+		count, err := Count[DirectReadTest](db)
+		require.NoError(t, err)
+		assert.Equal(t, 2, count)
+
+		// Get — direct read by name.
+		row, err := Get[DirectReadTest](db, Where{"name=", "Alpha"})
+		require.NoError(t, err)
+		require.NotNil(t, row)
+		assert.Equal(t, "Alpha", row.Name)
+
+		// ListRange — direct read via iterator.
+		var names []string
+		var iterErr error
+		for _, r := range ListRange[DirectReadTest](db, 0, "", "name ASC", 0,
+			func(e error) { iterErr = e },
+		) {
+			names = append(names, r.Name)
+		}
+		require.NoError(t, iterErr)
+		assert.ElementsMatch(t, []string{"Alpha", "Beta"}, names)
 	})
 
 	t.Run("Count", func(t *testing.T) {
