@@ -166,11 +166,12 @@ func Insert[T any](db *sql.DB, rows ...T) (err error) {
 // the transaction is rolled back. Otherwise, the transaction is committed.
 // The last inserted row ID is returned as a result.
 func InsertId[T any](db *sql.DB, rows ...T) (id int64, err error) {
+	tableName := query.Name[T]()
 	// Call insertWithCallback function
 	err = InsertWithCallback(db,
 		// Callback function which returns last inserted row ID
 		func(db *sql.DB, tx *sql.Tx) error {
-			id, err = getLastInsertID(db, tx)
+			id, err = getLastInsertID(db, tx, tableName)
 			return err
 		},
 		// Rows to insert
@@ -281,49 +282,56 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 		err = tx.Commit()
 	}()
 
-	// Update rows
+	// Update rows. Each iteration uses its own prepared statement and closes
+	// it before moving on so that statement handles do not pile up on the
+	// transaction when many attrs are processed in one call.
 	for _, attr := range attrs {
-
-		// Create where clause
-		var wheres []string
-		for _, where := range attr.Wheres {
-			wheres = append(wheres, where.Field)
-		}
-
-		// Create update statement
-		updateStmt, errUpdate := query.Update[T](wheres...)
-		if errUpdate != nil {
-			err = errUpdate
-			return
-		}
-
-		// Create prepared update statement
-		stmt, errPrepare := tx.Prepare(updateStmt)
-		if errPrepare != nil {
-			err = errPrepare
-			return
-		}
-		defer stmt.Close()
-
-		// Create struct attr.Row field values array
-		args, errArgs := query.Args(attr.Row, forWrite)
-		if errArgs != nil {
-			err = errArgs
-			return
-		}
-
-		// Add where conditions to args array
-		for _, where := range attr.Wheres {
-			args = append(args, where.Value)
-		}
-
-		// Execute update statement
-		_, err = execStmt(stmt, args...)
-		if err != nil {
+		if err = updateOne(tx, attr); err != nil {
 			return
 		}
 	}
 
+	return
+}
+
+// updateOne runs a single UPDATE within the given transaction. It is split
+// out from Update so that the prepared statement is closed at the end of
+// each iteration via a function-scoped defer, instead of accumulating one
+// defer per attribute on the parent Update frame.
+func updateOne[T any](tx *sql.Tx, attr UpdateAttr[T]) (err error) {
+
+	// Create where clause
+	var wheres []string
+	for _, where := range attr.Wheres {
+		wheres = append(wheres, where.Field)
+	}
+
+	// Create update statement
+	updateStmt, err := query.Update[T](wheres...)
+	if err != nil {
+		return
+	}
+
+	// Create prepared update statement
+	stmt, err := tx.Prepare(updateStmt)
+	if err != nil {
+		return
+	}
+	defer stmt.Close()
+
+	// Create struct attr.Row field values array
+	args, err := query.Args(attr.Row, forWrite)
+	if err != nil {
+		return
+	}
+
+	// Add where conditions to args array
+	for _, where := range attr.Wheres {
+		args = append(args, where.Value)
+	}
+
+	// Execute update statement
+	_, err = execStmt(stmt, args...)
 	return
 }
 
@@ -756,7 +764,7 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 
 				// Apply scanned values
 				fieldPtr := rowVal.Field(i).Addr()
-				if err := query.ArgsAppay(fieldPtr.Interface(), argsByStruct[i]); err != nil {
+				if err := query.ArgsApply(fieldPtr.Interface(), argsByStruct[i]); err != nil {
 					err = fmt.Errorf("failed to apply scanned values to field %s: %w", fieldPtr, err)
 					errFunc(err)
 					return
@@ -781,9 +789,11 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 
 // getLastInsertID returns the last inserted row ID for the given database
 // connection and transaction. It supports SQLite, MySQL, PostgreSQL and
-// SQL Server. If the database driver is not supported, it returns an
-// error.
-func getLastInsertID(db *sql.DB, tx *sql.Tx) (id int64, err error) {
+// SQL Server. The tableName argument is required for PostgreSQL, which has
+// no global "last insert id" and must look the value up via the table's
+// serial sequence (pg_get_serial_sequence). If the database driver is not
+// supported, it returns an error.
+func getLastInsertID(db *sql.DB, tx *sql.Tx, tableName string) (id int64, err error) {
 
 	// Get driver name
 	driverName := reflect.TypeOf(db.Driver()).String()
@@ -795,7 +805,19 @@ func getLastInsertID(db *sql.DB, tx *sql.Tx) (id int64, err error) {
 	case strings.Contains(driverName, "mysql"):
 		err = tx.QueryRow("SELECT LAST_INSERT_ID()").Scan(&id)
 	case strings.Contains(driverName, "postgres"):
-		err = tx.QueryRow("SELECT currval('table_name_id_seq')").Scan(&id)
+		// PostgreSQL has no session-wide LastInsertId. We look up the
+		// table's serial sequence at runtime instead of hardcoding a name.
+		// The "id" column name is assumed by sqlh convention; tables with a
+		// differently named auto-increment column should use
+		// InsertWithCallback with an explicit RETURNING query instead.
+		if tableName == "" {
+			err = fmt.Errorf("sqlh: PostgreSQL InsertId requires a table name")
+			return
+		}
+		err = tx.QueryRow(
+			"SELECT currval(pg_get_serial_sequence($1, 'id'))",
+			tableName,
+		).Scan(&id)
 	case strings.Contains(driverName, "sqlserver"):
 		err = tx.QueryRow("SELECT SCOPE_IDENTITY()").Scan(&id)
 	default:
@@ -950,20 +972,41 @@ func execTx(tx *sql.Tx, query string, args ...any) (result sql.Result, err error
 
 // execRetries is a helper function to execute a function that
 // returns a sql.Result and error, retrying up to numRetries times
-// in case of a "database is locked" error. It sleeps for retryDelay
-// milliseconds between retries. If the function returns an error
-// that is not "database is locked", it is returned immediately.
+// in case of a transient "database is locked" / busy error. It sleeps
+// for retryDelay between retries. Errors that are not lock-related are
+// returned immediately without retrying.
 func execRetries(f func() (sql.Result, error)) (result sql.Result, err error) {
 	for range numRetries {
 		result, err = f()
-		if err != nil {
-			if err.Error() == "database is locked" {
-				time.Sleep(retryDelay)
-				continue
-			}
+		if err == nil {
 			return
 		}
-		break
+		if !isLockError(err) {
+			return
+		}
+		time.Sleep(retryDelay)
 	}
 	return
+}
+
+// isLockError reports whether err looks like a transient lock or busy
+// error from any supported driver. The check is intentionally string-based
+// because the concrete driver error types are imported as side-effect only
+// blank imports, and we do not want to pull driver packages into the public
+// API of sqlh. It accepts wrapped errors by inspecting the full Error()
+// text.
+func isLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "database is locked"):
+		return true
+	case strings.Contains(msg, "database table is locked"):
+		return true
+	case strings.Contains(msg, "SQLITE_BUSY"):
+		return true
+	}
+	return false
 }

@@ -452,8 +452,13 @@ func Delete[T any](wheres ...string) (string, error) {
 // The forWrite parameter controls the behavior:
 //   - If forWrite is true, it returns a slice of values for INSERT/UPDATE,
 //     skipping autoincrement fields.
-//   - If forWrite is false, it returns a slice of pointers to copies of field values for
-//     SELECT (for sql.Scan). These pointers are then used with ArgsAppay to populate the struct.
+//   - If forWrite is false, it returns a slice of pointers suitable for
+//     sql.Rows.Scan. When row is addressable (passed via a pointer), the
+//     returned pointers point directly to the struct fields, allowing Scan
+//     to write in place with zero per-field allocations. For non-addressable
+//     values (passed by value) the function falls back to pointer-to-copy.
+//     The resulting pointers are then used with ArgsApply to populate (or
+//     re-populate) the struct after scanning.
 func Args(row any, forWrite bool) ([]any, error) {
 
 	// Get row value and type from the given row
@@ -464,57 +469,70 @@ func Args(row any, forWrite bool) ([]any, error) {
 		return nil, ErrTypeIsNotStruct
 	}
 
-	// Make arguments array for the given struct
-	args := make([]any, 0, rowVal.NumField())
-	for i := range rowVal.NumField() {
-		field := rowType.Field(i)
+	// Use cached metadata
+	meta := getMeta(rowType)
+	args := make([]any, 0, len(meta.fields))
 
-		// Always skip fields tagged with db:"-" or has name "_"
-		if field.Tag.Get("db") == "-" || field.Name == "_" {
+	for _, f := range meta.fields {
+		if f.skip {
 			continue
 		}
 
-		// Create argument
-		arg := rowVal.Field(i).Interface()
+		// For write operations, skip autoincrement fields.
+		if forWrite && f.isAutoIncrement {
+			continue
+		}
+
+		// Fast path: addressable struct in read mode, non-complex field.
+		// Pass a pointer directly to the struct field so that sql.Rows.Scan
+		// writes in place. This avoids boxing the value into interface{} and
+		// then taking the address of a copy — a significant source of per-row
+		// heap allocations in the original code.
+		if !forWrite && rowVal.CanAddr() && !f.isComplex {
+			args = append(args, rowVal.Field(f.index).Addr().Interface())
+			continue
+		}
 
 		// Create argument for complex numbers
-		if field.Type.Kind() == reflect.Complex64 ||
-			field.Type.Kind() == reflect.Complex128 {
-
-			c := rowVal.Field(i).Interface()
-
+		var arg any
+		if f.isComplex {
+			c := rowVal.Field(f.index).Interface()
 			var buf bytes.Buffer
 			enc := gob.NewEncoder(&buf)
 			enc.Encode(c)
-
 			arg = buf.Bytes()
+		} else {
+			arg = rowVal.Field(f.index).Interface()
 		}
 
 		// Append argument
 		if forWrite {
-			// For write operations, skip autoincrement fields.
-			if isAutoIncrement(field) {
-				continue
-			}
-			// For writing, get the value of the field.
 			args = append(args, arg)
 		} else {
 			// For reading/scanning, get a pointer to a copy of the field's value.
-			args = append(args, &arg)
+			argCopy := arg
+			args = append(args, &argCopy)
 		}
 	}
 
 	return args, nil
 }
 
-// ArgsAppay sets fields values of the given pointer to struct row from the args
-// array.
+// ArgsApply sets the fields of the given pointer-to-struct row from the args
+// slice produced by Args(row, false). It is the inverse of Args for read
+// operations: after sql.Rows.Scan has filled the placeholder values, ArgsApply
+// copies them back into the typed struct fields.
 //
-// It loops through the given struct fields and sets field values from the
-// corresponding arguments in the given args array.
-// Supported types are string, float64, time.Time, int64 and bool.
-// If unsupported type is found, it returns an error.
-func ArgsAppay(row any, args []any) (err error) {
+// Supported argument types are string, time.Time, bool, float32/float64, all
+// signed and unsigned integer kinds, and []byte. The []byte path also handles
+// conversion to string, complex64/complex128 (gob-decoded) and time.Time
+// (parsed from "2006-01-02 15:04:05"). Any other or nil argument value results
+// in the corresponding struct field being set to its zero value.
+//
+// It returns ErrTypeIsNotStruct if row does not point at a struct, or an error
+// describing the field on a type mismatch in the []byte branch. Panics during
+// reflection are recovered and returned as errors.
+func ArgsApply(row any, args []any) (err error) {
 
 	// Recover from panic
 	defer func() {
@@ -524,103 +542,119 @@ func ArgsAppay(row any, args []any) (err error) {
 	}()
 
 	// Get row value and type
-	rowVal, rowType := getRowValPtr(row)
+	rowVal, _ := getRowValPtr(row)
 
 	// Check if the given value is a struct
 	if rowVal.Kind() != reflect.Struct {
 		return ErrTypeIsNotStruct
 	}
 
+	// Use cached metadata
+	meta := getMeta(rowVal.Type())
+	argIdx := 0
+
 	// Loop through the struct fields
-	for i := range rowVal.NumField() {
+	for _, f := range meta.fields {
 
 		// Skip not db fields tagged with "-"
-		if rowType.Field(i).Tag.Get("db") == "-" || rowType.Field(i).Name == "_" {
+		if f.skip {
 			continue
 		}
 
-		// Get the current field and its value from the args
-		f := rowVal.Field(i)
-		arg := reflect.ValueOf(args[i]).Elem().Interface()
+		if argIdx >= len(args) {
+			return fmt.Errorf("not enough arguments for struct %s", rowVal.Type().Name())
+		}
 
-		// Set the field value based on the type of the argument
-		switch v := arg.(type) {
+		// Get the current field and the arg's reflect.Value.
+		// We intentionally avoid .Interface() here: extracting a concrete
+		// value from the arg pointer and re-boxing it into interface{} for
+		// a type switch allocates on the heap for types wider than one
+		// machine word (string, time.Time, []byte). Instead we dispatch on
+		// the Kind directly so the value stays in reflect.Value.
+		//
+		// In the addressable fast path (the common production case reached
+		// via QueryRange), args are typed pointers like *int64, *string, etc.
+		// In the non-addressable fallback, args are *any  (pointer to
+		// interface). The loop below collapses the *any wrapper so that the
+		// rest sees a concrete Kind regardless of which path produced the
+		// args.
+		field := rowVal.Field(f.index)
+		argVal := reflect.ValueOf(args[argIdx]).Elem()
+		for argVal.Kind() == reflect.Interface {
+			argVal = argVal.Elem()
+		}
+		argIdx++
 
-		case string:
-			f.SetString(v)
+		switch argVal.Kind() {
 
-		case time.Time:
-			f.Set(reflect.ValueOf(v))
+		case reflect.String:
+			field.SetString(argVal.String())
 
-		case bool:
-			f.SetBool(v)
+		case reflect.Struct:
+			// time.Time or other struct — set the whole value.
+			field.Set(argVal)
 
-		case float64:
-			f.SetFloat(v)
-		case float32:
-			f.SetFloat(float64(v))
+		case reflect.Bool:
+			field.SetBool(argVal.Bool())
 
-		case int:
-			setInt(f, v)
-		case int8:
-			setInt(f, v)
-		case int16:
-			setInt(f, v)
-		case int32:
-			setInt(f, v)
-		case int64:
-			setInt(f, v)
+		case reflect.Float32, reflect.Float64:
+			field.SetFloat(argVal.Float())
 
-		case uint:
-			setInt(f, v)
-		case uint8:
-			setInt(f, v)
-		case uint16:
-			setInt(f, v)
-		case uint32:
-			setInt(f, v)
-		case uint64:
-			setInt(f, v)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			setInt(field, argVal.Int())
 
-		case []byte:
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			setInt(field, argVal.Uint())
+
+		case reflect.Slice:
+			// Must be []byte (the only slice type drivers produce).
+			v := argVal.Bytes()
 			switch {
 
-			// Ensure the target field f in the struct is also []byte
-			case f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.Uint8:
-				f.SetBytes(v)
+			// Ensure the target field in the struct is also []byte
+			case field.Kind() == reflect.Slice && field.Type().Elem().Kind() == reflect.Uint8:
+				field.SetBytes(v)
 
 			// If the target field is a string, convert []byte to string
-			case f.Kind() == reflect.String:
-				f.SetString(string(v))
+			case field.Kind() == reflect.String:
+				field.SetString(string(v))
 
 			// If the target field is a Complex128, convert []byte to Complex128
-			case f.Kind() == reflect.Complex128, f.Kind() == reflect.Complex64:
+			case field.Kind() == reflect.Complex128, field.Kind() == reflect.Complex64:
 				var c complex128
 				gob.NewDecoder(bytes.NewReader(v)).Decode(&c)
-				f.SetComplex(c)
+				field.SetComplex(c)
 
 			// If the target field is a Time, convert []byte to Time
-			case f.Kind() == reflect.Struct && f.Type() == reflect.TypeOf(time.Time{}):
+			case field.Kind() == reflect.Struct && field.Type() == reflect.TypeOf(time.Time{}):
 				t := convertBytesToTime(v)
-				f.Set(reflect.ValueOf(t))
+				field.Set(reflect.ValueOf(t))
 
 			// Return an error in other cases
 			default:
 				err = fmt.Errorf("type mismatch for field %s: "+
 					"expected []byte for DB type []byte, but struct field is %s",
-					rowType.Field(i).Name, f.Type().String(),
+					f.dbName, field.Type().String(),
 				)
 				return
 			}
 
 		default:
-			// When unsupported type is found, usali it may be nil, we set zero
-			// to this field (zero value of v's type)
-			f.SetZero()
+			// When unsupported type is found (including nil), set zero
+			// value to this field.
+			field.SetZero()
 		}
 	}
 
 	return
+}
+
+// ArgsAppay is a deprecated misspelling of ArgsApply, kept for backward
+// compatibility with code that imported the original typo.
+//
+// Deprecated: use ArgsApply instead. ArgsAppay will be removed in v1.0.0.
+func ArgsAppay(row any, args []any) error {
+	return ArgsApply(row, args)
 }
 
 // convertBytesToTime takes a byte slice and converts it to a time.Time.
@@ -645,51 +679,18 @@ type TableName interface {
 // db_table_name is present in any struct field, it is used as the table Name
 // and replaces table Name created from the struct Name.
 func Name[T any]() (name string) {
-	// Get the type of the struct
 	t := reflect.TypeOf(new(T)).Elem()
-
-begin:
-
-	// If the type is a pointer, get the type of the struct it points to
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	// Get the table name as the lower case version of the struct name
-	name = strings.ToLower(t.Name())
-
-	// Find the table name in the struct fields tag db_table
-	for i := range t.NumField() {
-		field := t.Field(i)
-
-		// If first field is struct type get name from this struct fields
-		if i == 0 && (field.Type.Kind() == reflect.Struct ||
-			field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct) {
-			t = field.Type
-			goto begin
-		}
-
-		if tag := field.Tag.Get("db_table_name"); tag != "" {
-			name = tag
-			break
-		}
-	}
-
-	// Create instance of struct and get table name by interface TableName
-	newT := reflect.New(t).Interface()
-	if i, ok := newT.(TableName); ok {
-		name = i.TableName()
-	}
-
-	return
+	return getMeta(t).tableName
 }
 
 // isAutoIncrement returns true if the given struct field is tagged with
-// "autoincrement" or "AUTO_INCREMENT". It is used to skip autoincrement fields
-// in INSERT and UPDATE operations.
+// "autoincrement" (SQLite) or "auto_increment" (MySQL). The match is
+// case-insensitive. It is used to skip autoincrement fields in INSERT and
+// UPDATE operations.
 func isAutoIncrement(field reflect.StructField) bool {
-	return strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "autoincrement") ||
-		strings.Contains(strings.ToLower(field.Tag.Get("db_key")), "AUTO_INCREMENT")
+	dbKey := strings.ToLower(field.Tag.Get("db_key"))
+	return strings.Contains(dbKey, "autoincrement") ||
+		strings.Contains(dbKey, "auto_increment")
 }
 
 // This class definition in Go defines an interface named integer that
@@ -782,46 +783,11 @@ func checkType[T any]() (err error) {
 // If the db tag is not specified, the field name is used as the
 // table field name.
 func fields[T any](alls ...bool) (fieldsList []string) {
-	t := reflect.TypeOf(new(T)).Elem()
-
-begin:
-	// If the type is a pointer, get the type of the struct it points to
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	// Check parameter all
-	var all bool
+	meta := getMeta(reflect.TypeOf(new(T)).Elem())
 	if len(alls) > 0 && alls[0] {
-		all = true
+		return append([]string(nil), meta.fieldsAll...)
 	}
-
-	// Loop through the struct fields
-	for i := range t.NumField() {
-		// Get the field
-		field := t.Field(i)
-
-		// Skip autoincrement fields if all is false
-		if !all && isAutoIncrement(field) {
-			continue
-		}
-
-		// If the field name is not empty and the db tag is not set to "-"
-		// add the field name to the slice
-		if fieldName, ok := getFieldName(field); ok && fieldName != "_" {
-
-			// If i == 0 and field is struct than get fields from this struct.
-			// It used in ListRange when we use JOIN
-			if i == 0 && (field.Type.Kind() == reflect.Struct ||
-				field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct) {
-				t = field.Type
-				goto begin
-			}
-
-			fieldsList = append(fieldsList, fieldName)
-		}
-	}
-	return
+	return append([]string(nil), meta.fieldsNoAuto...)
 }
 
 // getFieldName returns a SQL fields name using db tag.

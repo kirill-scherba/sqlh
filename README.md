@@ -13,8 +13,8 @@
 - **Autoincrement Support:** Automatically excludes fields marked with `autoincrement` from `INSERT` and `UPDATE` statements.
 - **Built-in Transactions:** All write operations (`Insert`, `Update`, `Delete`, `Set`) are automatically wrapped in transactions with proper rollback on error.
 - **Database Lock Retry:** Built-in retry mechanism (up to 20 attempts with 100ms delay) for "database is locked" errors — ideal for SQLite.
-- **Go 1.25 Iterators:** `ListRange` returns `iter.Seq2[T, error]` for lazy iteration over query results.
-- **Pagination:** `List` supports offset/limit pagination via `query.Paginator`.
+- **Go 1.25 Iterators:** `ListRange` returns `iter.Seq2[int, T]` for lazy iteration over query results.
+- **Pagination:** `ListRows` and `ListRange` support explicit offset/limit pagination.
 - **JOIN Support:** Basic JOIN support with composite struct scanning.
 - **DISTINCT, Alias, Custom Table Names:** Flexible query attributes for advanced SELECT queries.
 - **Standardized Error Handling:** Returns `sql.ErrNoRows` and exported package errors (`ErrWhereClauseRequired`, `ErrMultipleRowsFound`, etc.) for easy checking with `errors.Is`.
@@ -45,7 +45,6 @@ import (
     "log"
 
     "github.com/kirill-scherba/sqlh"
-    "github.com/kirill-scherba/sqlh/query"
     _ "github.com/mattn/go-sqlite3"
 )
 
@@ -116,18 +115,18 @@ func main() {
     fmt.Println("Updated Alice's email.")
 
     // List all users
-    users, err := sqlh.List[User](db, 0, "", "", 0)
+    users, pagination, err := sqlh.List[User](db, 0, "", "name ASC")
     if err != nil {
         log.Fatalf("failed to list users: %v", err)
     }
-    fmt.Printf("Listed %d users.\n", len(users))
+    fmt.Printf("Listed %d users, next offset=%d.\n", len(users), pagination)
 
     // Iterate with ListRange (Go 1.25 iterator)
-    for user, err := range sqlh.ListRange[User](db, 0, "", "", 0) {
-        if err != nil {
-            log.Fatalf("failed to iterate: %v", err)
-        }
-        fmt.Printf("  User: ID=%d, Name=%s, Email=%s\n", user.ID, user.Name, user.Email)
+    for i, user := range sqlh.ListRange[User](db, 0, "", "name ASC", 0,
+        func(err error) { log.Fatalf("failed to iterate: %v", err) },
+    ) {
+        fmt.Printf("  #%d User: ID=%d, Name=%s, Email=%s\n",
+            i, user.ID, user.Name, user.Email)
     }
 
     // Delete user
@@ -153,33 +152,34 @@ defer userTable.Close()
 // Use methods
 userTable.Insert(User{Name: "Charlie", Email: "charlie@example.com"})
 charlie, _ := userTable.Get(sqlh.Where{Field: "name=", Value: "Charlie"})
-users, _ := userTable.List(0, "", "", 0)
+fmt.Println(charlie.Name)
+for _, user := range userTable.List(0, "", "name ASC", 0) {
+    fmt.Println(user.Name)
+}
 ```
 
 ## Query Attributes
 
-`List` and `Get` accept variadic query attributes for advanced queries:
+`List`, `ListRows`, and `ListRange` accept variadic query attributes for advanced queries:
 
 ```go
 // Pagination
-users, _ := sqlh.List[User](db, 0, "", "", 0,
-    &query.Paginator{Offset: 10, Limit: 5},
-)
+users, nextOffset, err := sqlh.ListRows[User](db, 10, "", "name ASC", 5)
 
 // WHERE with OR
-users, _ := sqlh.List[User](db, 0, "", "", 0,
+users, _, err := sqlh.List[User](db, 0, "", "name ASC",
     sqlh.Where{Field: "name=", Value: "Alice"},
     sqlh.Where{Field: "name=", Value: "Bob"},
     sqlh.SetWheresJoinOr(),
 )
 
 // SELECT DISTINCT
-users, _ := sqlh.List[User](db, 0, "", "", 0,
+users, _, err := sqlh.List[User](db, 0, "", "name ASC",
     sqlh.SetDistinct(),
 )
 
 // Table alias
-users, _ := sqlh.List[User](db, 0, "", "", 0,
+users, _, err := sqlh.List[User](db, 0, "", "name ASC",
     sqlh.SetAlias("u"),
 )
 
@@ -202,7 +202,7 @@ users, _, _ := sqlh.ListRows[UserWithProfile](db, 0, "", "", 10,
 // Context
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
-users, _ := sqlh.List[User](db, 0, "", "", 0, ctx)
+users, _, err := sqlh.List[User](db, 0, "", "name ASC", ctx)
 ```
 
 ## Set (Upsert)

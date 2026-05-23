@@ -7,13 +7,23 @@ description: SQL Helper — Go library for auto-generating SQL queries from stru
 
 ## Overview
 
-**sqlh** is a Go library that auto-generates SQL queries from Go struct tags. Supports SQLite and MySQL.
+**sqlh** is a Go library that auto-generates SQL queries from Go struct tags. Supports SQLite, MySQL, PostgreSQL (partial), and SQL Server (partial).
 
 **Key principles:**
 - **Struct tags define the schema** — `db`, `db_key`, `db_type`
 - **No rows.Scan needed** — use `ListRange` iterator or `List`/`Get` which return structs directly
 - **Auto-transactions** — all write operations are wrapped in transactions with rollback on error
 - **Go 1.25 iterators** — `ListRange` can be used in `for range` loops
+
+## Preferred API Choices
+
+- Use `Get[T]` for one row by unique key; it returns `(*T, error)`.
+- Use `List[T]` for normal list pages with the package default row count.
+- Use `ListRows[T]` when the page size must be explicit.
+- Use `ListRange[T]` for streaming/lazy iteration and large result sets.
+- Use `QueryRange[T]` only when a custom `SELECT` string is already needed.
+- Use `Table[T]` when several operations target the same table in one component.
+- Use `Set` only for SELECT-then-INSERT/UPDATE upsert semantics. For database-native UPSERT, write explicit SQL until sqlh adds native support.
 
 ## Core Functions
 
@@ -30,28 +40,36 @@ sqlh.InsertId(db, User{Name: "Bob"})  // returns last inserted ID
 
 ### Get (single row)
 ```go
-user, ok, err := sqlh.Get[User](db, sqlh.Where{Field: "id=", Value: 1})
+user, err := sqlh.Get[User](db, sqlh.Where{Field: "id=", Value: 1})
 ```
 
 ### List (multiple rows)
 ```go
-users, count, err := sqlh.List[User](db, limit, offset, "name ASC", where...)
+users, nextOffset, err := sqlh.List[User](db, 0, "", "name ASC", where...)
+users, nextOffset, err := sqlh.ListRows[User](db, 20, "", "name ASC", 10, where...)
 ```
 
 ### ListRange (lazy iterator — no rows.Scan!)
 ```go
 // Preferred way to iterate query results. The iterator wraps rows.Next automatically.
-for _, user := range sqlh.ListRange[User](db, 0, "", "name ASC", 0,
-    sqlh.Where{},
-    func(e error) { log.Fatal(e) },
+var listErr error
+for i, user := range sqlh.ListRange[User](db, 0, "", "name ASC", 0,
+    sqlh.Where{Field: "active=", Value: true},
+    func(e error) { listErr = e },
     context.Background()) {
-    fmt.Println(user.Name)
+    fmt.Println(i, user.Name)
+}
+if listErr != nil {
+    return listErr
 }
 ```
 
 ### Update
 ```go
-sqlh.Update(db, User{Name: "Alice Updated"}, sqlh.Where{Field: "id=", Value: 1})
+err := sqlh.Update(db, sqlh.UpdateAttr[User]{
+    Row:    User{Name: "Alice Updated"},
+    Wheres: []sqlh.Where{{Field: "id=", Value: 1}},
+})
 ```
 
 ### Delete
@@ -68,35 +86,58 @@ sqlh.Set(db, Product{Name: "Laptop", Price: 999}, sqlh.Where{Field: "name=", Val
 ## Table Wrapper API
 
 ```go
-tbl := sqlh.NewTable[User](db)
-tbl.Create()
+tbl, err := sqlh.CreateTable[User](db)
 tbl.Insert(User{Name: "Alice"})
-tbl.List(0, "", "name ASC")
 tbl.Get(sqlh.Where{Field: "id=", Value: 1})
-tbl.Update(User{Name: "Bob"}, sqlh.Where{Field: "id=", Value: 1})
+tbl.Update(sqlh.UpdateAttr[User]{
+    Row:    User{Name: "Bob"},
+    Wheres: []sqlh.Where{{Field: "id=", Value: 1}},
+})
 tbl.Delete(sqlh.Where{Field: "id=", Value: 1})
-tbl.ListRange(0, "", "name ASC", 0, sqlh.Where{}, errFunc, ctx)
+for _, user := range tbl.List(0, "", "name ASC", 0, errFunc, ctx) {
+    fmt.Println(user.Name)
+}
 ```
 
 ## JOIN Support
 
-Use nested structs with `db` tag prefix:
+Use a composite wrapper type plus `query.MakeJoin`. The first field is the main table projection; joined tables are added as pointer fields and selected through the join attributes.
 
 ```go
-type OrderItem struct {
-    OrderID   int64   `db:"order_id"`
-    ItemName  string  `db:"item_name"`
-    OrderDate string  `db:"order_date"`
-    Price     float64 `db:"price"`
+type UserTable struct {
+    ID   int64  `db:"id" db_key:"primary key autoincrement"`
+    Name string `db:"name"`
+}
 
-    // JOIN with Customer
-    Customer struct {
-        ID   int64  `db:"customer_id"`
-        Name string `db:"customer_name"`
-        Email string `db:"customer_email"`
+type OrderTable struct {
+    ID     int64   `db:"id" db_key:"primary key autoincrement"`
+    UserID int64   `db:"user_id"`
+    Total  float64 `db:"total"`
+}
+
+type UserWithOrders struct {
+    *UserTable  // main table
+    *OrderTable // joined table
+}
+
+join := query.MakeJoin[OrderTable](query.Join{
+    Join:  "left",
+    Alias: "o",
+    On:    "t.id = o.user_id",
+})
+
+for _, row := range sqlh.ListRange[UserWithOrders](db, 0, "", "t.name ASC", 0,
+    sqlh.SetAlias("t"),
+    join,
+    func(err error) { log.Fatal(err) },
+) {
+    if row.OrderTable != nil {
+        fmt.Println(row.UserTable.Name, row.OrderTable.Total)
     }
 }
 ```
+
+For aggregate joins (`COUNT`, `SUM`, etc.), prefer an explicit `query.Select` plus `QueryRange` or raw SQL when the result shape is not a direct table-composite scan.
 
 ## Custom Table Name
 
@@ -175,14 +216,55 @@ sqlh.Where{Field: "age>=", Value: 18}                 // age >= 18
 sqlh.Where{Field: "name LIKE", Value: "%Alice%"}      // name LIKE '%Alice%'
 ```
 
-## Paginator
+## Pagination
 
 ```go
-p := sqlh.NewPaginator(1, 10)  // page 1, 10 per page
-users, count, _ := sqlh.List[User](db, p.Limit, p.Offset, "name ASC")
-p.SetTotal(count)              // sets pagination metadata
-fmt.Println(p.Pages())         // total pages
+offset := 0
+for {
+    users, nextOffset, err := sqlh.ListRows[User](db, offset, "", "name ASC", 10)
+    if err != nil {
+        return err
+    }
+    for _, user := range users {
+        fmt.Println(user.Name)
+    }
+    if len(users) < 10 {
+        break
+    }
+    offset = nextOffset
+}
 ```
+
+## Context and Errors
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+var listErr error
+for _, user := range sqlh.ListRange[User](db, 0, "", "name ASC", 0,
+    ctx,
+    func(err error) { listErr = err },
+) {
+    fmt.Println(user.Name)
+}
+if listErr != nil {
+    return listErr
+}
+```
+
+`ListRange` and `QueryRange` do not yield `error` as the second range value. They report errors through an optional `func(error)` argument.
+
+## Common Mistakes
+
+- Do not write `user, ok, err := sqlh.Get[...]`; `Get` returns only `(*T, error)`.
+- Do not pass `limit` to `List`; use `ListRows` for explicit page size.
+- Do not write `for row, err := range ListRange`; the yielded values are `(index, row)`.
+- Do not call `sqlh.Update(db, row, where...)`; wrap updates in `sqlh.UpdateAttr[T]`.
+- Do not expect `Table[T].List` to return a slice; it returns an iterator.
+- Do not use manual `rows.Scan` unless you intentionally bypass sqlh with custom raw SQL.
+- Do not close shared `*sql.DB` through `Table[T]`; `Table.Close()` is intentionally a no-op.
+- Do not tag service fields as real DB columns. Use `db:"-"` or `_` fields for constraints/index declarations.
 
 ## Important Rules
 
@@ -190,19 +272,25 @@ fmt.Println(p.Pages())         // total pages
 2. **DO use struct tags** — schema is defined by tags, not SQL files
 3. **All write ops are auto-transacted** — no need to wrap in transactions manually
 4. **Use `Set` for upsert** — it's atomic (SELECT + INSERT/UPDATE in one transaction)
-5. **ListRange requires error handler function** — must provide `func(error)` callback
+5. **ListRange errors are callback-based** — provide `func(error)` when errors matter
 
 ## Examples Directory
 
 See `examples/` for runnable programs:
 - `basic/` — Insert, Get, List, Update, Delete
+- `crud/` — Full CRUD workflow example
 - `join/` — JOIN queries with nested structs
-- `paginator/` — Pagination with `NewPaginator`
+- `paginator/` — Pagination with `ListRows`
 - `set/` — Upsert via `Set`
 - `iterators/` — `ListRange` with Go 1.25 iterators
 - `context/` — Context cancellation with `ListRange`
 
 ## Test Files
 
-- `sqlh_test.go` — SQLite tests
-- `sqlh_mysql_test.go` — MySQL tests (requires external instance)
+- `sqlh_test.go` — SQLite integration tests (CRUD, joins, errors)
+- `sqlh_retry_test.go` — Lock-detection and retry unit tests
+- `sqlh_update_test.go` — Batch Update regression test (200-row)
+- `sqlh_benchmark_test.go` — Performance benchmarks
+- `sqlh_mysql_test.go` — MySQL tests (set `SQLH_MYSQL_TEST=1` to enable)
+- `query/sqlh_test.go` — Query generation unit tests
+- `query/sqlh_meta_cache_test.go` — Metadata cache unit tests

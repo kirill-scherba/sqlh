@@ -15,7 +15,7 @@ Go developers working with SQL databases face a significant amount of repetitive
 
 ### 2. Type Safety in Database Operations
 - **Problem**: Raw SQL queries are stringly-typed—no compile-time checking of column names or types
-- **Solution**: Go generics ensure type-safe operations; `Get[T]()` returns `*T`, `List[T]()` returns `[]T`
+- **Solution**: Go generics ensure type-safe operations; `Get[T]()` returns `*T`, `List[T]()` returns `[]T` plus the next pagination offset
 - **Impact**: Catch type mismatches at compile time rather than runtime
 
 ### 3. Transaction Management Complexity
@@ -39,7 +39,7 @@ Go developers working with SQL databases face a significant amount of repetitive
 2. **Intuitive API**: Function names mirror SQL operations (`Insert`, `Update`, `Get`, `List`, `Delete`)
 3. **Predictable Behavior**: Write operations are always transactional; errors are wrapped with clear context
 4. **Database-Agnostic by Default**: Works with SQLite out of the box; supports MySQL; extensible to PostgreSQL and SQL Server
-5. **Progressive Enhancement**: Start with basic CRUD, add pagination (`List`), WHERE conditions (`Where` struct), JOINs as needed
+5. **Progressive Enhancement**: Start with basic CRUD, add pagination (`ListRows`/`ListRange`), WHERE conditions (`Where` struct), JOINs as needed
 
 ## Key Differentiators from Alternatives
 
@@ -55,4 +55,4 @@ Go developers working with SQL databases face a significant amount of repetitive
 
 ## Project Maturity
 
-Current version v0.2.2 — active development with a clear roadmap. The package is functional for basic and intermediate use cases, with planned enhancements for advanced query features (JOIN, UPSERT, aggregate functions, schema migrations).
+Current version v0.5.1 plus active fix branches (Stages 1–4) — active development with a clear roadmap. The package is functional for basic and intermediate use cases, with planned enhancements for advanced query features, native UPSERT, aggregate functions, and schema migrations.

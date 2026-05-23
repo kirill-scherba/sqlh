@@ -7,7 +7,7 @@ package sqlh
 import (
 	"bytes"
 	"database/sql"
-	"fmt"
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -19,7 +19,15 @@ import (
 )
 
 // Start MySQL server with docker:
-//   docker run --rm --name mysql_test -e MYSQL_ROOT_PASSWORD=password -p 3306:3306 -d mysql
+//
+//	docker run --rm --name mysql_test -e MYSQL_ROOT_PASSWORD=password -p 3306:3306 -d mysql
+//
+// Run tests with MySQL:
+//
+//	SQLH_MYSQL_TEST=1 go test -run TestMySQL ./...
+//
+// The test is gated behind the SQLH_MYSQL_TEST environment variable so that
+// a plain `go test ./...` does not require a running Docker MySQL instance.
 
 type TestMySQLTable struct {
 	ID   int64  `db:"id" db_key:"not null primary key AUTO_INCREMENT"`
@@ -35,7 +43,7 @@ type TestMySQLTable2 struct {
 }
 
 func startMySQLContainer(t *testing.T) {
-	// Check if the container with the name 'mysql' is running
+	// Check if a container named 'mysql_test' is already running.
 	checkCmd := exec.Command("docker", "ps", "-q", "-f", "name=mysql_test")
 	var out bytes.Buffer
 	checkCmd.Stdout = &out
@@ -45,44 +53,62 @@ func startMySQLContainer(t *testing.T) {
 	}
 
 	if out.String() != "" {
-		t.Log("Container 'mysql' is already running.")
-	} else {
-		t.Log("Container 'mysql' is not running. Starting...")
-		runCmd := exec.Command("docker", "run", "--rm", "--name", "mysql_test", "--network", "host", "-e", "MYSQL_ROOT_PASSWORD=password", "-p", "3306:3306", "-d", "mysql")
-		err := runCmd.Run()
-		if err != nil {
-			t.Fatalf("Failed to start MySQL container: %v", err)
-		}
-		// t.Log("MySQL container starting...")
-		// time.Sleep(60 * time.Second)
+		t.Log("MySQL container is already running.")
+		return
+	}
+
+	t.Log("Starting MySQL container...")
+	runCmd := exec.Command("docker", "run", "--rm", "--name", "mysql_test",
+		"-e", "MYSQL_ROOT_PASSWORD=password",
+		"-p", "3306:3306",
+		"-d", "mysql",
+	)
+	if err := runCmd.Run(); err != nil {
+		t.Fatalf("Failed to start MySQL container: %v", err)
 	}
 }
 
-func newMySQLDB(driverName, dataSourceName string) (db *sql.DB, err error) {
+// waitMySQLReady pings the MySQL server until it responds or a 90-second
+// timeout expires. This replaces the old approach of sleeping for a fixed
+// duration or looping on a CREATE DATABASE error string.
+func waitMySQLReady(t *testing.T, dsn string) *sql.DB {
+	t.Helper()
+	const maxAttempts = 90
+	const sleep = 1 * time.Second
 
+	for i := 0; i < maxAttempts; i++ {
+		db, err := sql.Open("mysql", dsn)
+		if err == nil {
+			if err = db.Ping(); err == nil {
+				return db
+			}
+			db.Close()
+		}
+		if i == 0 {
+			t.Logf("Waiting for MySQL to become available (up to %ds)...", maxAttempts)
+		}
+		time.Sleep(sleep)
+	}
+	t.Fatalf("MySQL did not become ready within %ds", maxAttempts)
+	return nil
+}
+
+// newMySQLDB opens a MySQL connection pointed at the test database, creates
+// the test database if it does not exist, creates the test tables, and returns
+// the connection.
+func newMySQLDB(driverName, dataSourceName string) (db *sql.DB, err error) {
 	db, err = sql.Open(driverName, dataSourceName)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create database
-	for {
-		_, err = db.Exec("CREATE DATABASE IF NOT EXISTS test")
-		if err != nil {
-			if err.Error() == "invalid connection" {
-				// Wait for MySQL server to start
-				fmt.Println("Waiting 5 seconds for MySQL server to start...")
-				time.Sleep(5 * time.Second)
-				continue
-			}
-			return nil, err
-		}
-		break
+	if _, err = db.Exec("CREATE DATABASE IF NOT EXISTS test"); err != nil {
+		return nil, err
 	}
 
 	// Execute the USE command to select the database
-	_, err = db.Exec("USE test")
-	if err != nil {
+	if _, err = db.Exec("USE test"); err != nil {
 		return nil, err
 	}
 
@@ -91,8 +117,7 @@ func newMySQLDB(driverName, dataSourceName string) (db *sql.DB, err error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = db.Exec(createStmt)
-	if err != nil {
+	if _, err = db.Exec(createStmt); err != nil {
 		return nil, err
 	}
 
@@ -101,8 +126,7 @@ func newMySQLDB(driverName, dataSourceName string) (db *sql.DB, err error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = db.Exec(createStmt)
-	if err != nil {
+	if _, err = db.Exec(createStmt); err != nil {
 		return nil, err
 	}
 
@@ -110,11 +134,23 @@ func newMySQLDB(driverName, dataSourceName string) (db *sql.DB, err error) {
 }
 
 func TestMySQL(t *testing.T) {
+	// The test requires Docker + MySQL. Gate behind SQLH_MYSQL_TEST so that
+	// a plain 'go test ./...' never fails on CI or on machines without Docker.
+	if os.Getenv("SQLH_MYSQL_TEST") == "" {
+		t.Skip("MySQL tests disabled; set SQLH_MYSQL_TEST=1 to enable")
+	}
 
 	startMySQLContainer(t)
 
-	// Create test mysql database
-	db, err := newMySQLDB("mysql", "root:password@tcp(localhost:3306)/mysql")
+	// Open a connection to the *running* MySQL (root@localhost:3306) and
+	// wait for readiness. The /mysql database exists by default in the
+	// official mysql image.
+	dsn := "root:password@tcp(localhost:3306)/mysql"
+	readyDB := waitMySQLReady(t, dsn)
+	readyDB.Close()
+
+	// Create test database and tables, then run sub-tests.
+	db, err := newMySQLDB("mysql", dsn)
 	if err != nil {
 		t.Fatalf("Error creating test database: %v", err)
 	}

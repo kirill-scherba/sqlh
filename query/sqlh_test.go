@@ -50,7 +50,7 @@ func TestSQLQuery(t *testing.T) {
 		}
 
 		// Applay args
-		err = ArgsAppay(&someStruct, args)
+		err = ArgsApply(&someStruct, args)
 		require.NoError(t, err)
 		t.Logf("someStruct: %+v", someStruct)
 	})
@@ -124,7 +124,7 @@ func TestTable(t *testing.T) {
 		require.NoError(t, err, "failed to get row: %v", err)
 
 		// Applay args to row2 struct
-		err = ArgsAppay(&row2, args)
+		err = ArgsApply(&row2, args)
 		require.NoError(t, err, "failed to apply args: %v", err)
 
 		// Print row2 struct
@@ -240,7 +240,7 @@ func TestSelect(t *testing.T) {
 			}
 
 			// Apply scanned arguments to the row struct fields
-			err = ArgsAppay(&row, args)
+			err = ArgsApply(&row, args)
 			if err != nil {
 				err = fmt.Errorf("failed to apply arguments: %v", err)
 				t.Fatal(err)
@@ -304,12 +304,12 @@ func TestSelect(t *testing.T) {
 			}
 
 			// Apply scanned arguments to the structs
-			err = ArgsAppay(&someTable, args1)
+			err = ArgsApply(&someTable, args1)
 			if err != nil {
 				err = fmt.Errorf("failed to apply arguments: %v", err)
 				t.Fatal(err)
 			}
-			err = ArgsAppay(&otherTable, args2)
+			err = ArgsApply(&otherTable, args2)
 			if err != nil {
 				err = fmt.Errorf("failed to apply arguments: %v", err)
 				t.Fatal(err)

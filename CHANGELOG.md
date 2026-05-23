@@ -5,6 +5,56 @@ It's intended to be a human-readable history of changes.
 
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `query.ArgsApply` — correctly spelled replacement for the misspelled
+  `query.ArgsAppay`. Both functions have identical behaviour; new code should
+  use `ArgsApply`. (#5)
+- Unit tests for `isAutoIncrement` case-insensitivity, lock-error detection,
+  `execRetries` behaviour, a 200-row `Update` batch regression test, and a
+  compatibility test for the deprecated `ArgsAppay` alias.
+
+### Deprecated
+
+- `query.ArgsAppay` is now a thin wrapper around `query.ArgsApply` and is
+  marked `Deprecated:` for removal in v1.0.0. Existing callers continue to
+  work without changes. (#5)
+
+### Performance
+
+- `query.Args(row, false)` now uses the addressability of the struct to pass
+  typed pointers directly to struct fields instead of boxing values into
+  `interface{}` and copying. When the struct is addressable (passed by pointer,
+  the common case through `QueryRange`), this eliminates all per-field heap
+  allocations, reducing the read+apply pipeline from 13 to 4 allocs/op
+  (−69 %) on the benchmark and to approximately 2 allocs/op in the production
+  `QueryRange` code path. The non-addressable fallback (by-value struct) also
+  benefits from the reflect.Kind-based dispatch in `ArgsApply`, which avoids
+  an intermediate `interface{}` boxing step. (#6)
+
+### Fixed
+
+- `query.isAutoIncrement` now detects MySQL-style `AUTO_INCREMENT` tags. The
+  previous implementation lower-cased the tag and then compared it against the
+  literal `"AUTO_INCREMENT"`, which never matched, causing MySQL auto-increment
+  columns to be included in INSERT/UPDATE column lists. (#4)
+- `getLastInsertID` for PostgreSQL no longer references the hardcoded sequence
+  name `table_name_id_seq`. The sequence is now resolved at runtime through
+  `pg_get_serial_sequence` using the table name derived from the generic type.
+  Tables with a non-`id` auto-increment column should use `InsertWithCallback`
+  with an explicit `RETURNING` query. (#4)
+- `execRetries` now detects transient "database is locked" / busy errors
+  through substring matching and works with wrapped errors. The previous
+  exact-string comparison missed wrapped errors and the
+  `database table is locked` variant. The retry loop also exits immediately on
+  any non-lock error. (#4)
+- `Update` no longer accumulates `defer stmt.Close()` calls on the parent
+  frame. Per-iteration work is extracted into `updateOne` so that each
+  prepared statement is closed before the next attribute is processed,
+  preventing handle exhaustion on large batches. (#4)
+
 ## [v0.2.2] - 2025-10-26
 
 ### Added
@@ -63,7 +113,8 @@ It's intended to be a human-readable history of changes.
 
 - Corrected the return signature and logic of `Get` to consistently return `*T` or `nil` on error/not found.
 
-[Unreleased]: https://github.com/kirill-scherba/sqlh/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/kirill-scherba/sqlh/compare/v0.2.2...HEAD
+[v0.2.2]: https://github.com/kirill-scherba/sqlh/compare/v0.2.1...v0.2.2
 [v0.2.1]: https://github.com/kirill-scherba/sqlh/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/kirill-scherba/sqlh/compare/v0.1.1...v0.2.0
 [v0.1.1]: https://github.com/kirill-scherba/sqlh/compare/v0.1.0...v0.1.1

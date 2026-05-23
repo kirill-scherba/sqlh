@@ -23,14 +23,15 @@ Eliminate repetitive SQL query writing for Go developers by automatically genera
 6. **Database Lock Retry**: Built-in retry mechanism (up to 20 attempts with 100ms delay) for "database is locked" errors
 7. **Standardized Errors**: Returns `sql.ErrNoRows` and exported package errors (`ErrWhereClauseRequired`, `ErrMultipleRowsFound`, etc.)
 8. **Context Support**: Functions accept `context.Context` for timeouts and cancellations
-9. **Pagination**: `List` function supports pagination with offset/limit via `Paginator` structure
-10. **Iterators**: Uses Go 1.25 iterators (`iter.Seq`) for row iteration in `ListRange`
+9. **Pagination**: `ListRows` and `ListRange` support explicit offset/limit pagination
+10. **Iterators**: Uses Go 1.25 iterators (`iter.Seq2[int, T]`) for row iteration in `ListRange`
 11. **JOIN Support**: Basic JOIN support via `query.Join` attribute
 12. **DISTINCT, Alias, Name**: Flexible query attributes for advanced SELECT queries
+13. **Metadata Cache**: Struct reflection metadata is cached by `reflect.Type` for repeated query generation and scan/apply operations
 
 ## Current Version
 
-v0.2.2 (released 2025-10-26)
+v0.5.1 plus active `feature/metadata_cache` branch work
 
 ## License
 
