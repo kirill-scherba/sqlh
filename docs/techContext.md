@@ -193,5 +193,5 @@ SQLH_MYSQL_TEST=1 go test -run TestMySQL ./...
 3. No aggregate functions (GROUP BY, HAVING, SUM, AVG)
 4. No schema migration support (ALTER TABLE)
 5. No raw SQL fragment injection for edge cases
-6. MySQL test requires a running Docker container and is unconditional
-   (planned: gate behind `SQLH_MYSQL_TEST` env var)
+6. MySQL integration test requires Docker and is gated behind
+   `SQLH_MYSQL_TEST=1`.
