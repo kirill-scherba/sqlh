@@ -687,10 +687,23 @@ func Name[T any]() (name string) {
 // "autoincrement" (SQLite) or "auto_increment" (MySQL). The match is
 // case-insensitive. It is used to skip autoincrement fields in INSERT and
 // UPDATE operations.
+//
+// PostgreSQL SERIAL / BIGSERIAL / SMALLSERIAL types are also detected
+// through the db_type tag, so that fields defined with db_type:"SERIAL"
+// are automatically skipped during INSERT (the database handles the value
+// generation).
 func isAutoIncrement(field reflect.StructField) bool {
 	dbKey := strings.ToLower(field.Tag.Get("db_key"))
-	return strings.Contains(dbKey, "autoincrement") ||
-		strings.Contains(dbKey, "auto_increment")
+	if strings.Contains(dbKey, "autoincrement") ||
+		strings.Contains(dbKey, "auto_increment") {
+		return true
+	}
+	dbType := strings.ToLower(field.Tag.Get("db_type"))
+	switch dbType {
+	case "serial", "bigserial", "smallserial":
+		return true
+	}
+	return false
 }
 
 // This class definition in Go defines an interface named integer that

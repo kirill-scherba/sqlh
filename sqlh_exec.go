@@ -136,8 +136,16 @@ func GetNumRows() int {
 // transactions if needed.
 func Create[T any](db *sql.DB) (err error) {
 
+	// Detect dialect (needed for PG-specific DDL)
+	detectDialect(db)
+
 	// Create the SQL table for the T type
-	createStm, err := query.Table[T]()
+	var createStm string
+	if cachedDialect == dialectPostgreSQL {
+		createStm, err = query.TablePG[T]()
+	} else {
+		createStm, err = query.Table[T]()
+	}
 	if err != nil {
 		return
 	}
@@ -202,6 +210,9 @@ func InsertWithCallback[T any](
 	rows ...T,
 ) (err error) {
 
+	// Detect dialect (needed for PG placeholder rebinding)
+	detectDialect(db)
+
 	// Create insert statement
 	insertStmt, err := query.Insert[T]()
 	if err != nil {
@@ -234,8 +245,8 @@ func InsertWithCallback[T any](
 		err = tx.Commit()
 	}()
 
-	// Create prepared insert statement
-	stmt, err := tx.Prepare(insertStmt)
+	// Create prepared insert statement (rebind for PG)
+	stmt, err := tx.Prepare(rebindIfPG(insertStmt))
 	if err != nil {
 		return
 	}
@@ -266,6 +277,9 @@ func InsertWithCallback[T any](
 //
 // The function returns error if something failed during the update process.
 func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
+
+	// Detect dialect (needed for PG placeholder rebinding)
+	detectDialect(db)
 
 	// Start transaction
 	tx, err := db.Begin()
@@ -312,8 +326,8 @@ func updateOne[T any](tx *sql.Tx, attr UpdateAttr[T]) (err error) {
 		return
 	}
 
-	// Create prepared update statement
-	stmt, err := tx.Prepare(updateStmt)
+	// Create prepared update statement (rebind for PG)
+	stmt, err := tx.Prepare(rebindIfPG(updateStmt))
 	if err != nil {
 		return
 	}
@@ -344,6 +358,9 @@ func updateOne[T any](tx *sql.Tx, attr UpdateAttr[T]) (err error) {
 // If the row is found, the function updates the row.
 // If multiple rows are found, the function returns an error with message "multiple rows found".
 func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
+
+	// Detect dialect (needed for PG placeholder rebinding)
+	detectDialect(db)
 
 	// Start transaction
 	tx, err := db.Begin()
@@ -432,6 +449,9 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 // an error with message "multiple rows found". It returns a pointer to the row.
 func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error) {
 
+	// Detect dialect (needed for PG placeholder rebinding)
+	detectDialect(db)
+
 	// Check if the where clause is required
 	if len(wheres) == 0 {
 		err = ErrWhereClauseRequired
@@ -481,6 +501,9 @@ func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error) {
 // is rolled back. Otherwise, the transaction is committed.
 func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 
+	// Detect dialect (needed for PG placeholder rebinding)
+	detectDialect(db)
+
 	// Prepare where clauses and arguments
 	var whereArgs []any
 	var whereFields []string
@@ -509,8 +532,8 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 		err = tx.Commit()
 	}()
 
-	// Create prepared delete statement
-	stmt, err := tx.Prepare(deleteStmt)
+	// Create prepared delete statement (rebind for PG)
+	stmt, err := tx.Prepare(rebindIfPG(deleteStmt))
 	if err != nil {
 		return
 	}
@@ -544,8 +567,8 @@ func Count[T any](db querier, wheres ...Where) (count int, err error) {
 		return
 	}
 
-	// Execute the query
-	sqlRows, err := db.Query(selectStmt, selectArgs...)
+	// Execute the query (rebind for PG)
+	sqlRows, err := db.Query(rebindIfPG(selectStmt), selectArgs...)
 	if err != nil {
 		return
 	}
@@ -701,8 +724,8 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 	// Return iterator
 	return func(yield func(row T) bool) {
 
-		// Execute query
-		sqlRows, err := db.QueryContext(ctx, selectQuery, queryArgs...)
+		// Execute query (rebind for PG)
+		sqlRows, err := db.QueryContext(ctx, rebindIfPG(selectQuery), queryArgs...)
 		if err != nil {
 			err = fmt.Errorf("failed to execute query: %w", err)
 			errFunc(err)
@@ -804,7 +827,9 @@ func getLastInsertID(db *sql.DB, tx *sql.Tx, tableName string) (id int64, err er
 		err = tx.QueryRow("SELECT last_insert_rowid()").Scan(&id)
 	case strings.Contains(driverName, "mysql"):
 		err = tx.QueryRow("SELECT LAST_INSERT_ID()").Scan(&id)
-	case strings.Contains(driverName, "postgres"):
+	case strings.Contains(driverName, "postgres"),
+		strings.Contains(driverName, "pq"),
+		strings.Contains(driverName, "pgx"):
 		// PostgreSQL has no session-wide LastInsertId. We look up the
 		// table's serial sequence at runtime instead of hardcoding a name.
 		// The "id" column name is assumed by sqlh convention; tables with a
@@ -940,7 +965,7 @@ const retryDelay = 100 * time.Millisecond
 
 func execDb(db *sql.DB, query string, args ...any) (result sql.Result, err error) {
 	return execRetries(func() (sql.Result, error) {
-		return db.Exec(query, args...)
+		return db.Exec(rebindIfPG(query), args...)
 	})
 }
 
@@ -966,7 +991,7 @@ func execStmt(stmt *sql.Stmt, args ...any) (result sql.Result, err error) {
 // retries the query execution up to numRetries times with a retryDelay delay between retries.
 func execTx(tx *sql.Tx, query string, args ...any) (result sql.Result, err error) {
 	return execRetries(func() (sql.Result, error) {
-		return tx.Exec(query, args...)
+		return tx.Exec(rebindIfPG(query), args...)
 	})
 }
 
