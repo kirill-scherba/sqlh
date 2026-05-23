@@ -80,8 +80,11 @@
 ### Database Abstraction
 - SQLite driver detection and compatibility — ✅ tested
 - MySQL driver detection and compatibility — ✅ tested (with external instance)
-- PostgreSQL `last_insert_rowid` via `pg_get_serial_sequence` — ✅ fixed (was
-  hardcoded sequence name)
+- PostgreSQL driver detection and compatibility — ✅ tested (opt-in via `SQLH_TEST_POSTGRES=1`)
+  - Full CRUD integration suite (10 tests)
+  - `SERIAL`/`BIGSERIAL` auto-increment support
+  - Automatic `?` → `$N` placeholder rebinding
+  - PG-compatible DDL generation
 - SQL Server `SCOPE_IDENTITY` — ✅ partial
 
 ### Performance Optimisations
@@ -212,9 +215,6 @@ inside `QueryRange`.
 
 ## Next Milestones
 
-1. **Merge `docs/sync-status`** → `perf/args-allocs` (this branch)
-2. **Merge staging branches**: `fix/critical-bugs` → `refactor/api-cleanup` →
-   `perf/args-allocs` → `feature/metadata_cache`
-3. **Merge metadata cache** into `main` as v0.6.0
-4. **MySQL test gating** (Stage 5)
-5. **v1.0.0**: Stable API with schema management and full database compatibility
+1. **Merge `feature/2-public-promotion`** into `main`
+2. **Tag v0.6.0**: PostgreSQL support, CI matrix, docs alignment
+3. **v1.0.0**: Stable API with schema management and full database compatibility

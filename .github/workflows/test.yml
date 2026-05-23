@@ -1,0 +1,87 @@
+# Copyright 2025 Kirill Scherba <kirill@scherba.ru>. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+name: Test
+
+on:
+  push:
+    branches: [main, 'feature/**', 'bug/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ---- SQLite (always) ----
+  sqlite:
+    name: SQLite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.25']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go test ./...
+
+  # ---- MySQL (opt-in via service container) ----
+  mysql:
+    name: MySQL
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.25']
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -ppassword"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go test -v -run TestMySQL ./...
+        env:
+          SQLH_MYSQL_TEST: '1'
+          SQLH_MYSQL_DSN: 'root:password@tcp(localhost:3306)/test'
+
+  # ---- PostgreSQL (opt-in via service container) ----
+  postgres:
+    name: PostgreSQL
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.25']
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go test -v -run TestPostgreSQL ./...
+        env:
+          SQLH_TEST_POSTGRES: '1'
+          SQLH_POSTGRES_DSN: 'host=localhost port=5432 user=postgres password=password dbname=test sslmode=disable'

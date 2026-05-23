@@ -7,7 +7,7 @@ description: SQL Helper — Go library for auto-generating SQL queries from stru
 
 ## Overview
 
-**sqlh** is a Go library that auto-generates SQL queries from Go struct tags. Supports SQLite, MySQL, PostgreSQL (partial), and SQL Server (partial).
+**sqlh** is a Go library that auto-generates SQL queries from Go struct tags. Supports SQLite, MySQL, PostgreSQL (opt-in integration tests), and SQL Server (experimental).
 
 **Key principles:**
 - **Struct tags define the schema** — `db`, `db_key`, `db_type`

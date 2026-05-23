@@ -15,6 +15,29 @@ It's intended to be a human-readable history of changes.
 - Unit tests for `isAutoIncrement` case-insensitivity, lock-error detection,
   `execRetries` behaviour, a 200-row `Update` batch regression test, and a
   compatibility test for the deprecated `ArgsAppay` alias.
+- **PostgreSQL integration test suite**: 10 tests covering full CRUD
+  (`Insert`, `InsertId`, `Get`, `List`, `ListRows`, `ListRange`, `Update`,
+  `Delete`, `Set`, `Count`), `time.Time` fields, `SERIAL` auto-increment,
+  and JOIN with composite structs. Opt-in via `SQLH_TEST_POSTGRES=1`. (#2)
+- **PostgreSQL DDL generation**: `query.TablePG[T]()` generates
+  PostgreSQL-compatible CREATE TABLE statements (`SERIAL`/`BIGSERIAL`,
+  `bytea`, `boolean`, `double precision`). (#2)
+- **Placeholder rebinding**: `query.Rebind()` converts `?` to PostgreSQL
+  `$N` style. Automatically applied when a PostgreSQL driver is detected. (#2)
+- **`SQLH_MYSQL_DSN` / `SQLH_POSTGRES_DSN`** environment variables allow
+  connecting to existing MySQL/PostgreSQL instances instead of starting
+  Docker containers from the tests. (#2)
+- **CI matrix**: GitHub Actions workflow (`test.yml`) runs SQLite tests on
+  every push/PR, plus opt-in MySQL and PostgreSQL jobs via service
+  containers. (#2)
+
+### Changed
+
+- `isAutoIncrement` now detects `serial`, `bigserial`, and `smallserial`
+  `db_type` tags, enabling PostgreSQL-style auto-increment alongside
+  `autoincrement`/`auto_increment` in `db_key`. (#2)
+- Database support claims in documentation updated: PostgreSQL is now
+  listed as tested (opt-in); SQL Server is experimental. (#2)
 
 ### Deprecated
 
@@ -54,6 +77,40 @@ It's intended to be a human-readable history of changes.
   frame. Per-iteration work is extracted into `updateOne` so that each
   prepared statement is closed before the next attribute is processed,
   preventing handle exhaustion on large batches. (#4)
+- Driver detection for PostgreSQL now matches `lib/pq` (`*pq.Driver`) and
+  `pgx` (`*pgx.Driver`) driver types, not just strings containing
+  `"postgres"`. (#2)
+
+## [v0.5.1] - 2026-01-15
+
+### Added
+
+- `Custom Table Name`: Override auto-generated snake_case table name via
+  `db_table_name` struct tag or `TableName()` method.
+- CRUD example and documentation updates.
+
+## [v0.5.0] - 2025-12-01
+
+### Added
+
+- **`Table[T]` Wrapper API**: Method-based API for all CRUD operations
+  (`Insert`, `Get`, `List`, `Update`, `Delete`, `Set`, `Count`, `InsertId`).
+- `CreateTable[T]()` convenience constructor for `Table[T]`.
+
+## [v0.4.0] - 2025-11-15
+
+### Added
+
+- **Database lock retry**: Built-in `execRetries` with 20 attempts × 100ms
+  delay for transient "database is locked" / busy errors.
+- **Transactional `Get`**: `Get` wraps read in a transaction for consistency.
+- **Metadata cache**: Struct reflection metadata cached by `reflect.Type` for
+  repeated query generation and scan/apply operations.
+- **JOIN support**: `MakeJoin[T]` and composite struct scanning for
+  LEFT/RIGHT/INNER/OUTER JOINs.
+- **Flexible SELECT**: `DISTINCT`, table aliases, custom table names.
+- **`SetWheresJoinOr`**: OR-joining of WHERE conditions.
+- **Expanded WHERE operators**: `IN`, `LIKE`, `IS NULL`, `IS NOT NULL`.
 
 ## [v0.2.2] - 2025-10-26
 
@@ -113,7 +170,10 @@ It's intended to be a human-readable history of changes.
 
 - Corrected the return signature and logic of `Get` to consistently return `*T` or `nil` on error/not found.
 
-[Unreleased]: https://github.com/kirill-scherba/sqlh/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/kirill-scherba/sqlh/compare/v0.6.0...HEAD
+[v0.5.1]: https://github.com/kirill-scherba/sqlh/compare/v0.5.0...v0.5.1
+[v0.5.0]: https://github.com/kirill-scherba/sqlh/compare/v0.4.0...v0.5.0
+[v0.4.0]: https://github.com/kirill-scherba/sqlh/compare/v0.2.2...v0.4.0
 [v0.2.2]: https://github.com/kirill-scherba/sqlh/compare/v0.2.1...v0.2.2
 [v0.2.1]: https://github.com/kirill-scherba/sqlh/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/kirill-scherba/sqlh/compare/v0.1.1...v0.2.0

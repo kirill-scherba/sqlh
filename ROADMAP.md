@@ -19,12 +19,12 @@ This document outlines the planned features and improvements for the `sqlh` pack
 ### Advanced Features & Data Integrity
 
 - **`JOIN` Support:** `MakeJoin[T]` for LEFT/RIGHT/INNER/OUTER JOINs with composite struct scanning via `ListRows`.
-- **Native `UPSERT`:** `Set` performs atomic upsert (select then insert/update).
-- **Go 1.25 Iterators:** `ListRange` and `QueryRange` return `iter.Seq2[T, error]` for lazy iteration.
-- **Pagination:** `List` and `ListRange` support `query.Paginator` for offset/limit pagination.
+- **Atomic Upsert:** `Set` performs atomic upsert (SELECT then INSERT/UPDATE).
+- **Go 1.25 Iterators:** `ListRange` returns `iter.Seq2[int, T]` for lazy iteration over query results. `QueryRange` returns `iter.Seq[T]`.
+- **Pagination:** `ListRows` and `ListRange` accept explicit `offset` and `limit` parameters.
 - **Table Wrapper API:** `Table[T]` provides method-based API for all CRUD operations.
 - **Database Lock Retry:** Built-in retry for "database is locked" errors (SQLite).
-- **Database-Agnostic:** Works with SQLite, MySQL, PostgreSQL, SQL Server with driver-detected `last_insert_rowid`.
+- **Database Support:** SQLite and MySQL tested; PostgreSQL tested (opt-in); SQL Server experimental.
 - **Composite Types:** Supports `complex64`, `complex128`, `[]byte`, `time.Time` struct fields.
 
 ## Future Directions

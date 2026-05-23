@@ -136,14 +136,22 @@ func GetNumRows() int {
 // transactions if needed.
 func Create[T any](db *sql.DB) (err error) {
 
+	// Detect dialect (needed for PG-specific DDL)
+	dialect := detectDialect(db)
+
 	// Create the SQL table for the T type
-	createStm, err := query.Table[T]()
+	var createStm string
+	if dialect == dialectPostgreSQL {
+		createStm, err = query.TablePG[T]()
+	} else {
+		createStm, err = query.Table[T]()
+	}
 	if err != nil {
 		return
 	}
 
 	// Create the SQL table for the T type
-	_, err = execDb(db, createStm)
+	_, err = execDb(db, createStm, dialect)
 	return
 }
 
@@ -202,6 +210,9 @@ func InsertWithCallback[T any](
 	rows ...T,
 ) (err error) {
 
+	// Detect dialect (needed for PG placeholder rebinding)
+	dialect := detectDialect(db)
+
 	// Create insert statement
 	insertStmt, err := query.Insert[T]()
 	if err != nil {
@@ -234,8 +245,8 @@ func InsertWithCallback[T any](
 		err = tx.Commit()
 	}()
 
-	// Create prepared insert statement
-	stmt, err := tx.Prepare(insertStmt)
+	// Create prepared insert statement (rebind for PG)
+	stmt, err := tx.Prepare(rebind(insertStmt, dialect))
 	if err != nil {
 		return
 	}
@@ -267,6 +278,9 @@ func InsertWithCallback[T any](
 // The function returns error if something failed during the update process.
 func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 
+	// Detect dialect (needed for PG placeholder rebinding)
+	dialect := detectDialect(db)
+
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
@@ -286,7 +300,7 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 	// it before moving on so that statement handles do not pile up on the
 	// transaction when many attrs are processed in one call.
 	for _, attr := range attrs {
-		if err = updateOne(tx, attr); err != nil {
+		if err = updateOne(tx, dialect, attr); err != nil {
 			return
 		}
 	}
@@ -298,7 +312,7 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 // out from Update so that the prepared statement is closed at the end of
 // each iteration via a function-scoped defer, instead of accumulating one
 // defer per attribute on the parent Update frame.
-func updateOne[T any](tx *sql.Tx, attr UpdateAttr[T]) (err error) {
+func updateOne[T any](tx *sql.Tx, dialect string, attr UpdateAttr[T]) (err error) {
 
 	// Create where clause
 	var wheres []string
@@ -312,8 +326,8 @@ func updateOne[T any](tx *sql.Tx, attr UpdateAttr[T]) (err error) {
 		return
 	}
 
-	// Create prepared update statement
-	stmt, err := tx.Prepare(updateStmt)
+	// Create prepared update statement (rebind for PG)
+	stmt, err := tx.Prepare(rebind(updateStmt, dialect))
 	if err != nil {
 		return
 	}
@@ -345,6 +359,9 @@ func updateOne[T any](tx *sql.Tx, attr UpdateAttr[T]) (err error) {
 // If multiple rows are found, the function returns an error with message "multiple rows found".
 func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 
+	// Detect dialect (needed for PG placeholder rebinding)
+	dialect := detectDialect(db)
+
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
@@ -361,7 +378,8 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 	}()
 
 	// Get rows from database using the transaction. Limit to 2 to detect multiple rows.
-	rows, _, err := ListRows[T](tx, 0, "", "", 2, wheresToAttrs(wheres)...)
+	// Use the internal listRows with explicit dialect so that *sql.Tx is handled correctly.
+	rows, _, err := listRows[T](tx, 0, "", "", 2, dialect, wheresToAttrs(wheres)...)
 	if err != nil {
 		return // Rollback will be called
 	}
@@ -380,7 +398,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 			err = errArgs
 			return // Rollback
 		}
-		_, err = execTx(tx, insertStmt, args...)
+		_, err = execTx(tx, insertStmt, dialect, args...)
 		if err != nil {
 			return // Rollback
 		}
@@ -407,7 +425,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 		}
 		args = append(args, whereValues...)
 
-		_, err = execTx(tx, updateStmt, args...)
+		_, err = execTx(tx, updateStmt, dialect, args...)
 		if err != nil {
 			return // Rollback
 		}
@@ -432,6 +450,9 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 // an error with message "multiple rows found". It returns a pointer to the row.
 func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error) {
 
+	// Detect dialect (needed for PG placeholder rebinding)
+	dialect := detectDialect(db)
+
 	// Check if the where clause is required
 	if len(wheres) == 0 {
 		err = ErrWhereClauseRequired
@@ -453,8 +474,9 @@ func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error) {
 		err = tx.Commit()
 	}()
 
-	// Get rows from database. Limit to 2 to detect multiple rows
-	rows, _, err := ListRows[T](tx, 0, "", "", 2, wheresToAttrs(wheres)...)
+	// Get rows from database. Limit to 2 to detect multiple rows.
+	// Use the internal listRows with explicit dialect so that *sql.Tx is handled correctly.
+	rows, _, err := listRows[T](tx, 0, "", "", 2, dialect, wheresToAttrs(wheres)...)
 	if err != nil {
 		return nil, err // Return nil pointer on error
 	}
@@ -480,6 +502,9 @@ func Get[T any](db *sql.DB, wheres ...Where) (row *T, err error) {
 // and executes it. If any error occurs during the process, the transaction
 // is rolled back. Otherwise, the transaction is committed.
 func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
+
+	// Detect dialect (needed for PG placeholder rebinding)
+	dialect := detectDialect(db)
 
 	// Prepare where clauses and arguments
 	var whereArgs []any
@@ -509,8 +534,8 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 		err = tx.Commit()
 	}()
 
-	// Create prepared delete statement
-	stmt, err := tx.Prepare(deleteStmt)
+	// Create prepared delete statement (rebind for PG)
+	stmt, err := tx.Prepare(rebind(deleteStmt, dialect))
 	if err != nil {
 		return
 	}
@@ -529,6 +554,8 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 // encountered during the execution.
 func Count[T any](db querier, wheres ...Where) (count int, err error) {
 
+	dialect := dialectFromQuerier(db)
+
 	var attr = &query.SelectAttr{}
 	var selectArgs []any
 
@@ -544,8 +571,8 @@ func Count[T any](db querier, wheres ...Where) (count int, err error) {
 		return
 	}
 
-	// Execute the query
-	sqlRows, err := db.Query(selectStmt, selectArgs...)
+	// Execute the query (rebind for PG)
+	sqlRows, err := db.Query(rebind(selectStmt, dialect), selectArgs...)
 	if err != nil {
 		return
 	}
@@ -588,8 +615,19 @@ func List[T any](db querier, previous int, groupBy, orderBy string, listAttrs ..
 // numRows.
 //
 // The listAttrs is a variadic list of Where conditions to filter the rows.
+//
+// The dialect is auto-detected from the querier. Callers that pass a *sql.Tx
+// and know the dialect should use the non-exported listRows overload.
 func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows int,
 	listAttrs ...any) (rows []T, pagination int, err error) {
+	return listRows[T](db, previous, groupBy, orderBy, numRows, dialectFromQuerier(db),
+		listAttrs...)
+}
+
+// listRows is the internal version of ListRows that accepts an explicit
+// dialect string.
+func listRows[T any](db querier, previous int, groupBy, orderBy string, numRows int,
+	dialect string, listAttrs ...any) (rows []T, pagination int, err error) {
 
 	// Function to process errors on ListRange
 	listAttrs = append(listAttrs, func(e error) { err = e })
@@ -598,7 +636,8 @@ func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows 
 	rows = make([]T, 0, numRows)
 
 	// Iterate over list records and append it to rows slice
-	for _, row := range ListRange[T](db, previous, groupBy, orderBy, numRows, listAttrs...) {
+	for _, row := range listRange[T](db, previous, groupBy, orderBy, numRows, dialect,
+		listAttrs...) {
 		rows = append(rows, row)
 	}
 
@@ -632,8 +671,20 @@ func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows 
 //		SetAlias("t"), // Set main table alias to use in Joins
 //		query.MakeJoin[TestTable2](query.Join{On: "t.id = o.id", Alias: "o"}),
 //	)
+// ListRange returns an iterator over the rows in the database.
+//
+// The dialect is auto-detected from the querier. Callers that pass a *sql.Tx
+// and know the dialect should use the non-exported listRange overload.
 func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int,
 	listAttrs ...any) iter.Seq2[int, T] {
+	return listRange[T](db, offset, groupBy, orderBy, limit, dialectFromQuerier(db),
+		listAttrs...)
+}
+
+// listRange is the internal version of ListRange that accepts an explicit
+// dialect string.
+func listRange[T any](db querier, offset int, groupBy, orderBy string, limit int,
+	dialect string, listAttrs ...any) iter.Seq2[int, T] {
 
 	// Get errorFunc and ctx from listAttrs
 	listAttrs, errFunc, ctx := getErrfuncAndCtx(listAttrs)
@@ -663,7 +714,7 @@ func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int
 		// Iterate over rows in request with join
 		if withJoin {
 			var i = offset
-			for row := range QueryRange[T](db, stmt, args...) {
+			for row := range queryRange[T](db, stmt, dialect, args...) {
 				if !yield(i, row) {
 					break
 				}
@@ -674,7 +725,7 @@ func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int
 
 		// Iterate over rows in request without join
 		var i = offset
-		for row := range QueryRange[struct{ In T }](db, stmt, args...) {
+		for row := range queryRange[struct{ In T }](db, stmt, dialect, args...) {
 			if !yield(i, row.In) {
 				break
 			}
@@ -693,7 +744,18 @@ func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int
 // To check for errors, add a function of type func(error) to the query
 // arguments (queryArgs parameter of this function). The range will stop on any
 // error returned by the function.
+//
+// The dialect is auto-detected from the querier. Callers that pass a *sql.Tx
+// and know the dialect should use the non-exported queryRange overload.
 func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Seq[T] {
+	return queryRange[T](db, selectQuery, dialectFromQuerier(db), queryArgs...)
+}
+
+// queryRange is the internal version of QueryRange that accepts an explicit
+// dialect string. It is used by functions that know the dialect from a
+// surrounding *sql.DB call and pass a *sql.Tx as the querier.
+func queryRange[T any](db querier, selectQuery string, dialect string,
+	queryArgs ...any) iter.Seq[T] {
 
 	// Get errorFunc and ctx from listAttrs
 	queryArgs, errFunc, ctx := getErrfuncAndCtx(queryArgs)
@@ -701,8 +763,8 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 	// Return iterator
 	return func(yield func(row T) bool) {
 
-		// Execute query
-		sqlRows, err := db.QueryContext(ctx, selectQuery, queryArgs...)
+		// Execute query (rebind for PG)
+		sqlRows, err := db.QueryContext(ctx, rebind(selectQuery, dialect), queryArgs...)
 		if err != nil {
 			err = fmt.Errorf("failed to execute query: %w", err)
 			errFunc(err)
@@ -804,7 +866,9 @@ func getLastInsertID(db *sql.DB, tx *sql.Tx, tableName string) (id int64, err er
 		err = tx.QueryRow("SELECT last_insert_rowid()").Scan(&id)
 	case strings.Contains(driverName, "mysql"):
 		err = tx.QueryRow("SELECT LAST_INSERT_ID()").Scan(&id)
-	case strings.Contains(driverName, "postgres"):
+	case strings.Contains(driverName, "postgres"),
+		strings.Contains(driverName, "pq"),
+		strings.Contains(driverName, "pgx"):
 		// PostgreSQL has no session-wide LastInsertId. We look up the
 		// table's serial sequence at runtime instead of hardcoding a name.
 		// The "id" column name is assumed by sqlh convention; tables with a
@@ -938,9 +1002,9 @@ func listStatement[T any](previous int, groupBy, orderBy string, numRows int,
 const numRetries = 20
 const retryDelay = 100 * time.Millisecond
 
-func execDb(db *sql.DB, query string, args ...any) (result sql.Result, err error) {
+func execDb(db *sql.DB, query string, dialect string, args ...any) (result sql.Result, err error) {
 	return execRetries(func() (sql.Result, error) {
-		return db.Exec(query, args...)
+		return db.Exec(rebind(query, dialect), args...)
 	})
 }
 
@@ -964,9 +1028,9 @@ func execStmt(stmt *sql.Stmt, args ...any) (result sql.Result, err error) {
 // If the query execution is successful, the function returns a pointer to the result of the query.
 // If the query execution fails due to a "database is locked" error, the function
 // retries the query execution up to numRetries times with a retryDelay delay between retries.
-func execTx(tx *sql.Tx, query string, args ...any) (result sql.Result, err error) {
+func execTx(tx *sql.Tx, query string, dialect string, args ...any) (result sql.Result, err error) {
 	return execRetries(func() (sql.Result, error) {
-		return tx.Exec(query, args...)
+		return tx.Exec(rebind(query, dialect), args...)
 	})
 }
 

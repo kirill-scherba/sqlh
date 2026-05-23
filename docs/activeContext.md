@@ -61,22 +61,25 @@ The project is at version **v0.5.1** on `main`, with active development on
 
 ## Active Development Focus
 
-### Completed (Stages 1–3)
+### Completed
 
 1. ✅ **Critical bug fixes** — isAutoIncrement case-folding, PostgreSQL
    getLastInsertID, lock-retry robustness, Update statement-leak
 2. ✅ **ArgsAppay → ArgsApply rename** with deprecation alias
 3. ✅ **Zero-alloc read path** — addressable structs skip per-field heap
    allocations in the Args scan/apply pipeline
+4. ✅ **PostgreSQL integration tests** — full CRUD suite (10 tests) with
+   Docker opt-in, auto `?` → `$N` rebinding, PG-compatible DDL generation
+5. ✅ **MySQL/PostgreSQL CI matrix** — GitHub Actions workflow with service
+   containers for both databases
+6. ✅ **Documentation alignment** — README, ROADMAP, CHANGELOG, SKILL.md,
+   and Memory Bank synced with current API and database support status
 
 ### Remaining Short-term items
 
-1. **Documentation alignment** (this branch): Keep Memory Bank synchronised
-   with current API and implementation state
-2. **Merge stage branches**: Land `fix/critical-bugs`, `refactor/api-cleanup`,
-   `perf/args-allocs` into `feature/metadata_cache`
-3. **MySQL test stability**: Gate MySQL tests behind `SQLH_MYSQL_TEST` env var
-   to avoid constant failures on CI
+1. **Merge stage branches**: Land `fix/critical-bugs`, `refactor/api-cleanup`,
+   `perf/args-allocs` into `main`
+2. **Release v0.6.0**: Tag and publish with the collected fixes and PostgreSQL support
 
 ### Medium-term (Phase 2)
 
@@ -106,12 +109,9 @@ The project is at version **v0.5.1** on `main`, with active development on
 
 ## Next Milestones
 
-1. **Short-term**: Merge `docs/sync-status` → `perf/args-allocs`
-2. **Short-term**: Merge `fix/critical-bugs` → `feature/metadata_cache`
-3. **Short-term**: Merge `refactor/api-cleanup` → `feature/metadata_cache`
-4. **Short-term**: Merge `perf/args-allocs` → `feature/metadata_cache`
-5. **Medium-term**: MySQL test gate (Stage 5)
-6. **Long-term**: Native UPSERT, aggregate functions, schema management
+1. **Short-term**: Merge this branch (`feature/2-public-promotion`) into `main`
+   and tag `v0.6.0`
+2. **Medium-term**: Native UPSERT, aggregate functions, schema management
 
 ## Testing Status
 
@@ -132,6 +132,7 @@ The project is at version **v0.5.1** on `main`, with active development on
 | v0.2.0 | 2025-06-21 | Atomic operations, autoincrement fix |
 | v0.2.1 | 2025-06-23 | Transaction close fix, bool handling fix |
 | v0.2.2 | 2025-10-26 | ListRange iterator, expanded arg types |
-| v0.4.0 | — | Database lock retry, transactional Get |
-| v0.5.0 | — | `Table[T]` wrapper API |
-| v0.5.1 | — | CRUD example and documentation updates |
+| v0.4.0 | 2025-11-15 | Lock retry, metadata cache, JOIN, flexible SELECT, advanced WHERE |
+| v0.5.0 | 2025-12-01 | `Table[T]` wrapper API |
+| v0.5.1 | 2026-01-15 | Custom table name, CRUD example updates |
+| v0.6.0 | — | PostgreSQL support, CI matrix, docs alignment |
