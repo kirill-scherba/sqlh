@@ -156,7 +156,6 @@ userTable, err := sqlh.CreateTable[User](db)
 if err != nil {
     log.Fatalf("failed to create table: %v", err)
 }
-defer userTable.Close()
 
 // Use methods
 userTable.Insert(User{Name: "Charlie", Email: "charlie@example.com"})
@@ -166,6 +165,12 @@ for _, user := range userTable.List(0, "", "name ASC", 0) {
     fmt.Println(user.Name)
 }
 ```
+
+> **Note:** `Table[T]` is a lightweight wrapper over a shared `*sql.DB` connection pool.
+> It does **not** own the database connection — the pool is managed by the caller
+> who created it. `Table.Close()` exists but is intentionally a no-op for
+> backward compatibility. Resource cleanup is done by closing the original
+> `*sql.DB` handle (`db.Close()`).
 
 ## Query Attributes
 

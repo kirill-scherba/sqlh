@@ -31,9 +31,16 @@ func CreateTable[T any](db *sql.DB) (t *Table[T], err error) {
 	return &Table[T]{db}, Create[T](db)
 }
 
-// Close is a no-op. It does not close the underlying database connection
-// because *sql.DB is a connection pool that may be shared between multiple
-// tables. The connection should be closed by the caller who created it.
+// Close is a no-op for backward compatibility.
+//
+// It does not close the underlying database connection because *sql.DB is a
+// connection pool that may be shared between multiple tables, other Table[T]
+// instances, and other parts of the application. The pool should be closed by
+// the caller who created it (e.g. via db.Close()).
+//
+// Do not rely on Close() for resource cleanup — it is intentionally empty.
+// New code should not call Close() on Table[T] at all; it is retained only
+// to avoid breaking existing callers.
 func (t *Table[T]) Close() {
 	// Intentionally empty: do not close a shared *sql.DB pool.
 }
