@@ -75,7 +75,7 @@
 - Generic `Table[T]` struct with method-based API (`Insert`, `Get`, `List`,
   `Update`, `Delete`, `Set`, `Count`, `InsertId`) — ✅ functional
 - `CreateTable[T]()` convenience constructor — ✅ functional
-- `Close()` is a safe no-op on shared `*sql.DB` pools — ✅ functional
+- `Close()` is a backward-compatible no-op — `Table[T]` does not own the `*sql.DB` pool, only the caller should close it — ✅ functional (not recommended for teaching)
 
 ### Database Abstraction
 - SQLite driver detection and compatibility — ✅ tested
