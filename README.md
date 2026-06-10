@@ -232,7 +232,14 @@ See [docs/list-api-guidance.md](docs/list-api-guidance.md) for detailed guidance
 
 ## Set (Upsert)
 
-`Set` performs an atomic upsert: it selects a row matching WHERE conditions, then either updates it (if found) or inserts a new row (if not found).
+`Set` performs a database-native upsert for PostgreSQL, SQLite, and MySQL:
+
+- **PostgreSQL**: `INSERT ... ON CONFLICT (...) DO UPDATE SET ...`
+- **SQLite**: `INSERT ... ON CONFLICT (...) DO UPDATE SET ...`
+- **MySQL**: `INSERT ... ON DUPLICATE KEY UPDATE ...`
+
+For unsupported or unknown database drivers, it falls back to the legacy
+SELECT-then-INSERT/UPDATE transaction-based path.
 
 ```go
 err := sqlh.Set(db, User{Name: "Dave", Email: "dave@example.com"},

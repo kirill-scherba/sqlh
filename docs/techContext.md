@@ -54,6 +54,12 @@ func QueryRange[T any](db querier, selectQuery string, queryArgs ...any) iter.Se
 func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) error
 func Delete[T any](db *sql.DB, wheres ...Where) error
 func Set[T any](db *sql.DB, row T, wheres ...Where) error
+//   - Uses native UPSERT (ON CONFLICT / ON DUPLICATE KEY UPDATE) for
+//     PostgreSQL, SQLite, MySQL; falls back to SELECT-then-INSERT/UPDATE.
+
+// Internal helpers
+func buildUpsertSQL[T any](conflictFields, fieldNames []string, dialect string) (string, error)
+func extractColumn(field string) string
 
 // Table wrapper
 func CreateTable[T any](db *sql.DB) (*Table[T], error)

@@ -90,7 +90,7 @@ func MakeJoin[T any](join Join) (out Join) {
 	}
 
 	// Create join fields
-	for _, field := range fields[T](true) {
+	for _, field := range Fields[T](true) {
 		if len(join.Alias) > 0 {
 			field = join.Alias + "." + field
 		}
@@ -221,7 +221,7 @@ func Insert[T any]() (string, error) {
 	}
 
 	// Get table field names
-	fields := fields[T]()
+	fields := Fields[T]()
 
 	// Return INSERT statement
 	return fmt.Sprintf("INSERT INTO %s(%s) VALUES(%s);",
@@ -243,7 +243,7 @@ func Update[T any](wheres ...string) (string, error) {
 	}
 
 	// Get field names
-	fields := fields[T]()
+	fields := Fields[T]()
 
 	// Where clause should be set
 	if len(wheres) == 0 {
@@ -283,7 +283,7 @@ func Select[T any](attr *SelectAttr) (string, error) {
 	var orderby string
 	var distinct string
 	var name = Name[T]()
-	var fields = fields[T](true)
+	var fields = Fields[T](true)
 
 	// Check attributes
 	if attr != nil {
@@ -792,16 +792,21 @@ func checkType[T any]() (err error) {
 	return
 }
 
-// fields returns a list of struct field names.
+// Fields returns a list of struct field names.
 //
 // It takes type T as an argument and returns a slice of strings.
 // The slice contains the names of the struct fields.
 // The names are determined by the db tag in the struct field.
 // If the db tag is not specified, the field name is used as the
 // table field name.
-func fields[T any](alls ...bool) (fieldsList []string) {
+//
+// If includeAuto is true, all fields are returned including autoincrement
+// columns. By default (includeAuto false), autoincrement fields are excluded
+// — this is appropriate for INSERT and UPSERT operations where the database
+// generates the key.
+func Fields[T any](includeAuto ...bool) (fieldsList []string) {
 	meta := getMeta(reflect.TypeOf(new(T)).Elem())
-	if len(alls) > 0 && alls[0] {
+	if len(includeAuto) > 0 && includeAuto[0] {
 		return append([]string(nil), meta.fieldsAll...)
 	}
 	return append([]string(nil), meta.fieldsNoAuto...)

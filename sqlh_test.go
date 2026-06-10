@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -28,6 +29,13 @@ type TestTable struct {
 type TestTable2 struct {
 	ID    int64 `db:"id" db_key:"not null primary key"`
 	Value int64 `db:"value"`
+}
+
+// TestTableUnique is a test table with a unique column for native UPSERT tests.
+type TestTableUnique struct {
+	ID   int64  `db:"id" db_key:"not null primary key autoincrement"`
+	Name string `db:"name" db_key:"unique"`
+	Data []byte `db:"data"`
 }
 
 func TestSQLOperations(t *testing.T) {
@@ -398,5 +406,64 @@ func TestInsertId(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), id)
 
+	})
+}
+
+func TestSetNativeUpsert(t *testing.T) {
+	// Open in-memory SQLite database for testing
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	require.NoError(t, err, "failed to open database")
+	defer db.Close()
+
+	// Create table with unique constraint on name
+	createStmt, err := query.Table[TestTableUnique]()
+	require.NoError(t, err)
+	_, err = db.Exec(createStmt)
+	require.NoError(t, err, "failed to create table")
+
+	t.Run("insert new row via Set", func(t *testing.T) {
+		err := Set(db, TestTableUnique{Name: "SetAlice", Data: []byte("alice_data")},
+			Where{"name=", "SetAlice"})
+		require.NoError(t, err)
+		defer Delete[TestTableUnique](db, Where{"name=", "SetAlice"})
+
+		retrieved, err := Get[TestTableUnique](db, Where{"name=", "SetAlice"})
+		require.NoError(t, err)
+		require.NotNil(t, retrieved)
+		assert.Equal(t, []byte("alice_data"), retrieved.Data)
+		assert.Greater(t, retrieved.ID, int64(0))
+	})
+
+	t.Run("update existing row via Set", func(t *testing.T) {
+		err := Set(db, TestTableUnique{Name: "SetBob", Data: []byte("initial")},
+			Where{"name=", "SetBob"})
+		require.NoError(t, err)
+		defer Delete[TestTableUnique](db, Where{"name=", "SetBob"})
+
+		// Update the same row via Set (native UPSERT)
+		err = Set(db, TestTableUnique{Name: "SetBob", Data: []byte("updated")},
+			Where{"name=", "SetBob"})
+		require.NoError(t, err)
+
+		retrieved, err := Get[TestTableUnique](db, Where{"name=", "SetBob"})
+		require.NoError(t, err)
+		require.NotNil(t, retrieved)
+		assert.Equal(t, []byte("updated"), retrieved.Data)
+		assert.Equal(t, "SetBob", retrieved.Name)
+	})
+
+	t.Run("multiple sequential upserts", func(t *testing.T) {
+		// Perform 3 sequential upserts of the same row
+		for i := 0; i < 3; i++ {
+			err := Set(db, TestTableUnique{Name: "SetCyclic", Data: []byte(fmt.Sprintf("data_%d", i))},
+				Where{"name=", "SetCyclic"})
+			require.NoError(t, err)
+		}
+		defer Delete[TestTableUnique](db, Where{"name=", "SetCyclic"})
+
+		retrieved, err := Get[TestTableUnique](db, Where{"name=", "SetCyclic"})
+		require.NoError(t, err)
+		require.NotNil(t, retrieved)
+		assert.Equal(t, []byte("data_2"), retrieved.Data)
 	})
 }

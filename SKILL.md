@@ -274,7 +274,7 @@ if listErr != nil {
 1. **DO NOT use `rows.Scan()` or `for rows.Next()`** — sqlh's `ListRange` iterator handles this internally
 2. **DO use struct tags** — schema is defined by tags, not SQL files
 3. **All write ops are auto-transacted** — no need to wrap in transactions manually
-4. **Use `Set` for upsert** — it's atomic (SELECT + INSERT/UPDATE in one transaction)
+4. **Use `Set` for upsert** — uses database-native UPSERT (PostgreSQL/SQLite/MySQL) with automatic fallback to SELECT-then-INSERT/UPDATE for unsupported drivers
 5. **ListRange errors are callback-based** — provide `func(error)` when errors matter
 
 ## Examples Directory
