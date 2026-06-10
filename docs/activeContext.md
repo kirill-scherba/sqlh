@@ -73,7 +73,10 @@ The project is at version **v0.5.1** on `main`, with active development on
 5. ✅ **MySQL/PostgreSQL CI matrix** — GitHub Actions workflow with service
    containers for both databases
 6. ✅ **Documentation alignment** — README, ROADMAP, CHANGELOG, SKILL.md,
-   and Memory Bank synced with current API and database support status
+   and Memory Bank synced with current API and database support status.
+   SQL Server docs further clarified (issue #15) — marked as
+   experimental/partial with no CI in productContext, techContext,
+   progress, and a ROADMAP entry for optional future SQL Server CI.
 
 ### Remaining Short-term items
 

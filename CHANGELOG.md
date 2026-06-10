@@ -38,6 +38,9 @@ It's intended to be a human-readable history of changes.
   `autoincrement`/`auto_increment` in `db_key`. (#2)
 - Database support claims in documentation updated: PostgreSQL is now
   listed as tested (opt-in); SQL Server is experimental. (#2)
+- SQL Server support claims further clarified across documentation:
+  explicitly marked as experimental/partial with no integration tests or CI;
+  added ROADMAP entry for optional future SQL Server CI. (#15)
 
 ### Deprecated
 

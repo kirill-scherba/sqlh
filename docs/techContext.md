@@ -7,8 +7,8 @@
 - **Databases Supported**:
   - SQLite (via `github.com/mattn/go-sqlite3 v1.14.28`)
   - MySQL (via `github.com/go-sql-driver/mysql v1.9.3`)
-  - PostgreSQL (partial, via `last_insert_rowid` detection)
-  - SQL Server (partial, via `SCOPE_IDENTITY` detection)
+  - PostgreSQL (tested; full CRUD suite via opt-in `SQLH_TEST_POSTGRES=1`)
+  - SQL Server (partial/experimental; driver detection and `SCOPE_IDENTITY` only; no integration tests, no CI coverage)
 - **Testing**: `github.com/stretchr/testify v1.10.0`
 
 ## Development Environment
