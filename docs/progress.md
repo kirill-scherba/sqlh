@@ -96,7 +96,7 @@
 ### Documentation & Examples
 - **Memory Bank**: `docs/activeContext.md`, `docs/progress.md`,
   `docs/systemPatterns.md`, `docs/techContext.md`, `docs/productContext.md`,
-  `docs/projectbrief.md` — ✅ created
+  `docs/projectbrief.md`, `docs/list-api-guidance.md` — ✅ created
 - **Example functions**: `sqlh_example_test.go` with `Example_` functions for
   pkg.go.dev — ✅ created
 - **SKILL.md**: AI-assistant user guide with quick reference and important
@@ -206,10 +206,11 @@ inside `QueryRange`.
   wrapper tests pass, metadata cache tests pass, retry logic tests pass
 - **MySQL Tests**: ✅ Gated behind `SQLH_MYSQL_TEST=1`; runs against local Docker
   container with readiness wait
-- **Documentation**: CHANGELOG.md, README.md, ROADMAP.md, SKILL.md, all 6
+- **Documentation**: CHANGELOG.md, README.md, ROADMAP.md, SKILL.md, all 7
   Memory Bank files present
 - **Examples**: 7 runnable programs in `examples/` directory (basic, join,
-  paginator, set, iterators, context, crud)
+  paginator, set, iterators, context, crud) plus `ExampleListRows` and
+  `ExampleListRange` in `sqlh_example_test.go` for pkg.go.dev
 - **Backward Compatibility**: Public API changes limited; `ArgsAppay` deprecated
   for removal in v1.0.0; all else backward-compatible
 

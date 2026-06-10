@@ -100,18 +100,25 @@ The project is at version **v0.5.1** on `main`, with active development on
 
 ## Current Design Decisions Being Evaluated
 
-1. Whether to use a builder pattern for complex queries (similar to GORM's
+1. ✅ **Issue #17 resolved** — List API guidance clarified:
+   - `List` remains a convenience helper (not deprecated).
+   - `ListRows` is the **preferred** API for explicit pagination.
+   - `ListRange` is the **core lazy iterator** — memory-efficient streaming, JOINs, context.
+   - `QueryRange` is the **raw SQL escape hatch** — bypasses query generation.
+   - `Table.List` delegates to `ListRange`.
+   - New documentation: `docs/list-api-guidance.md`.
+2. Whether to use a builder pattern for complex queries (similar to GORM's
    chainable API) or continue with attribute-based configuration
-2. How to implement native UPSERT with database-specific SQL syntax abstraction
-3. Memory Bank file naming — current names (`activeContext.md`, `progress.md`,
+3. How to implement native UPSERT with database-specific SQL syntax abstraction
+4. Memory Bank file naming — current names (`activeContext.md`, `progress.md`,
    etc.) differ from the AGENTS.md convention (`CONTEXT.md`, `STATUS.md`,
    `DESIGN.md`). Rename requires discussion due to external link impact.
 
 ## Next Milestones
 
-1. **Short-term**: Merge this branch (`feature/2-public-promotion`) into `main`
-   and tag `v0.6.0`
-2. **Medium-term**: Native UPSERT, aggregate functions, schema management
+1. **Short-term**: Merge this branch (`feature/17-list-api-guidance`) into `main`
+2. **Tag v0.6.0**: PostgreSQL support, CI matrix, docs alignment
+3. **Medium-term**: Native UPSERT, aggregate functions, schema management
 
 ## Testing Status
 

@@ -46,21 +46,29 @@ This document outlines the planned features and improvements for the `sqlh` pack
 
 ### API Unification (v1.0.0 consideration)
 
-- **Options-based List API:** Consider a single `List` function with an options
-  struct for v1.0.0, replacing the three-materialized-vs-iterator split:
+- **Options-based List API:** Consider a unified set of options shared by
+  `ListRows` and `ListRange` for v1.0.0, consolidating offset, limit, groupBy,
+  and orderBy into a common struct:
   ```go
   type ListOpts struct {
       Offset   int
       Limit    int
       GroupBy  string
       OrderBy  string
-      Materialize bool  // true -> []T; false -> iter.Seq2[int, T]
   }
-  func List[T any](db querier, opts ListOpts, listAttrs ...any) (...)
   ```
-  This would consolidate `List`/`ListRows`/`ListRange` into one entry point
-  without losing expressiveness. Requires careful migration path for existing
-  callers.
+  The two APIs would remain separate — `ListRows` returning `([]T, int, error)`
+  and `ListRange` returning `iter.Seq2[int, T]` — but could accept a shared
+  `ListOpts` value instead of individual positional parameters. This keeps
+  compile-time return-type safety while reducing parameter duplication.
+  Requires careful migration path for existing callers.
+
+### Developer Experience
+
+- **Raw SQL Fragments:** Allow raw SQL injection into generated queries for complex cases.
+- **Transactional Reads:** Allow `Get`/`List` within an existing transaction (`*sql.Tx`).
+- **`IN` Operator Shortcuts:** Dedicated API for `WHERE id IN (?, ?, ?)` queries.
+- **Aggregate Functions:** `GROUP BY`, `HAVING`, `SUM()`, `AVG()`, `MIN()`, `MAX()` support.
 
 ### Performance
 
