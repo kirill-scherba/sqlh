@@ -67,7 +67,7 @@ func main() {
 	fmt.Printf("✓ Get by name: ID=%d, Name=%s, Age=%d\n",
 		userPtr.ID, userPtr.Name, userPtr.Age)
 
-	// ---- 5. List all users (previous=0, groupBy="", orderBy="name ASC") ----
+	// ---- 5. List all users (List: quick convenience, default page size) ----
 	users, pagination, err := sqlh.List[User](db, 0, "", "name ASC")
 	if err != nil {
 		log.Fatalf("failed to list users: %v", err)
@@ -88,7 +88,7 @@ func main() {
 		fmt.Printf("   - %s, age %d\n", u.Name, u.Age)
 	}
 
-	// ---- 7. ListRange (lazy iterator — Seq2[int, T]) ----
+	// ---- 7. ListRange (lazy iterator — Seq2[int, T], memory-efficient) ----
 	fmt.Println("✓ ListRange (sorted by age DESC):")
 	for i, user := range sqlh.ListRange[User](db, 0, "", "age DESC", 0) {
 		fmt.Printf("   [%d] %s, age %d\n", i, user.Name, user.Age)

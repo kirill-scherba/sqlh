@@ -589,15 +589,12 @@ func Count[T any](db querier, wheres ...Where) (count int, err error) {
 	return
 }
 
-// List returns rows from T database table.
+// List returns up to query.GetNumRows() (default 10) rows as a materialized
+// slice. It is a convenience wrapper that delegates to ListRows with the default
+// page size.
 //
-// The function takes a list of Where condition as input parameter.
-// The function executes SELECT statement with the given where conditions.
-// If the rows are found, the function returns the rows and nil as error.
-// If the rows are not found, the function returns a default value for rows and
-// an error with message "not found". It returns number of rows limited to
-// numRows. The default value for numRows is 10. The numRows may be set by
-// SetNumRows and get by GetNumRows functions.
+// Prefer ListRows for explicit page-size control, or ListRange for lazy/
+// streaming iteration. For JOIN queries use ListRange or QueryRange directly.
 func List[T any](db querier, previous int, groupBy, orderBy string, listAttrs ...any) (
 	rows []T, pagination int, err error) {
 
@@ -605,19 +602,12 @@ func List[T any](db querier, previous int, groupBy, orderBy string, listAttrs ..
 	return ListRows[T](db, previous, groupBy, orderBy, query.GetNumRows(), listAttrs...)
 }
 
-// ListRows returns rows from T database table.
+// ListRows returns up to numRows rows as a materialized slice. This is the
+// preferred API for explicit pagination — pass the returned pagination value
+// as the starting offset on the next call.
 //
-// The function takes a list of Where condition as input parameter.
-// The function executes SELECT statement with the given where conditions.
-// If the rows are found, the function returns the rows and nil as error.
-// If the rows are not found, the function returns a default value for rows and
-// an error with message "not found". It returns number of rows limited to
-// numRows.
-//
-// The listAttrs is a variadic list of Where conditions to filter the rows.
-//
-// The dialect is auto-detected from the querier. Callers that pass a *sql.Tx
-// and know the dialect should use the non-exported listRows overload.
+// For lazy/streaming iteration use ListRange, which ListRows wraps internally.
+// For raw SQL queries use QueryRange.
 func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows int,
 	listAttrs ...any) (rows []T, pagination int, err error) {
 	return listRows[T](db, previous, groupBy, orderBy, numRows, dialectFromQuerier(db),
@@ -647,31 +637,38 @@ func listRows[T any](db querier, previous int, groupBy, orderBy string, numRows 
 	return
 }
 
-// ListRange returns an iterator over the rows in the database. It takes a
-// querier, a previous number of rows, order by string, number of rows to retrieve,
-// and a variadic list of where conditions to filter the rows.
-// The returned iterator yields each row in the database, and will stop yielding
-// when all the rows have been retrieved or when the yield function returns false.
-// The yielded value is a pointer to a struct of type T, and a new instance of
-// the struct is created for each yielded value.
-// To check for errors, add a function of type func(error) to the query
-// arguments (listAttrs parameter of this function). The range will stop on any
-// error returned by the function.
+// ListRange is the core lazy iterator for reading rows from the database.
+// It returns an iter.Seq2[int, T] that yields (index, row) pairs, so rows are
+// produced on-demand without materialising the full result set in memory.
 //
-// To use Joins, add a Join type to the listAttrs parameter and set T to func
-// generic type with mine table and joined tables structs. To add Joins use the
-// query.MakeJoin function.
+// Use ListRange when you need:
+//   - Memory-efficient streaming over large datasets.
+//   - Early termination (break out of the range).
+//   - JOIN queries with composite structs.
+//   - Context-driven cancellation.
 //
-// Example:
+// Parameters:
+//   - offset — starting row position (0 for the first page).
+//   - groupBy — GROUP BY expression (empty string to skip).
+//   - orderBy — ORDER BY expression (empty string to skip).
+//   - limit — maximum rows to yield (0 means unlimited).
+//   - listAttrs — variadic attributes such as Where, Join, Alias, Distinct,
+//     Name, or an error callback func(error).
 //
-//	users, _, err := ListRange[struct {
-//		*TestTable  // Main table
-//		*TestTable2 // Other joined table
-//	}](db, 0, "", "name ASC", 100,
-//		SetAlias("t"), // Set main table alias to use in Joins
-//		query.MakeJoin[TestTable2](query.Join{On: "t.id = o.id", Alias: "o"}),
-//	)
-// ListRange returns an iterator over the rows in the database.
+// List and ListRows are convenience wrappers that collect ListRange results
+// into a materialised slice. QueryRange is the low-level raw-SQL sibling.
+//
+// Example with JOIN:
+//
+//	for i, row := range ListRange[struct{
+//	    *User    // Main table
+//	    *Profile // Joined table
+//	}](db, 0, "", "u.name ASC", 100,
+//	    SetAlias("u"),
+//	    query.MakeJoin[Profile](query.Join{On: "u.id = p.user_id", Alias: "p"}),
+//	) {
+//	    fmt.Printf("%d: %s\n", i, row.User.Name)
+//	}
 //
 // The dialect is auto-detected from the querier. Callers that pass a *sql.Tx
 // and know the dialect should use the non-exported listRange overload.
@@ -734,16 +731,19 @@ func listRange[T any](db querier, offset int, groupBy, orderBy string, limit int
 	}
 }
 
-// QueryRange returns an iterator over the rows in the database. It takes a
-// querier, a select query string and a variadic list of query arguments.
-// The returned iterator yields each row in the database, and will stop yielding
-// when all the rows have been retrieved or when the yield function returns false.
-// The yielded value is a pointer to a struct of type T, and a new instance of
-// the struct is created for each yielded value.
+// QueryRange returns an iterator over the rows in the database for an arbitrary
+// SELECT query. The caller provides the complete SQL statement and its arguments;
+// sqlh handles struct scanning via reflection.
 //
-// To check for errors, add a function of type func(error) to the query
-// arguments (queryArgs parameter of this function). The range will stop on any
-// error returned by the function.
+// Use QueryRange when the auto-generated query (Where / Join attribute system)
+// is insufficient and you need full control over the SELECT statement. For
+// auto-generated queries prefer ListRange or ListRows.
+//
+// The returned iter.Seq[T] yields each scanned row. Stop iterating early by
+// using break in the range statement.
+//
+// Error handling: include a func(error) in queryArgs to receive scan or
+// execution errors.
 //
 // The dialect is auto-detected from the querier. Callers that pass a *sql.Tx
 // and know the dialect should use the non-exported queryRange overload.

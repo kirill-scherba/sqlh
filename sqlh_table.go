@@ -138,15 +138,12 @@ func (t *Table[T]) Count(wheres ...Where) (count int, err error) {
 	return Count[T](t.db, wheres...)
 }
 
-// List returns an iterator over the rows in the database.
+// List returns an iter.Seq2[int, T] that lazily streams rows from the database.
+// It delegates to ListRange. Use this method when you want memory-efficient
+// iteration via the Table[T] wrapper API.
 //
-// The function takes a list of Where condition as input parameter.
-// The function executes SELECT statement with the given where conditions.
-// If the rows are found, the function returns the rows and nil as error.
-// If the rows are not found, the function returns a default value for rows and
-// an error with message "not found". It returns number of rows limited to
-// numRows. The default value for numRows is 10. The numRows may be set by
-// SetNumRows and get by GetNumRows functions.
+// For explicit paginated listing with a materialised slice, use ListRows
+// directly; for raw SQL queries use QueryRange.
 func (t *Table[T]) List(offset int, groupBy, orderBy string, limit int,
 	listAttrs ...any) iter.Seq2[int, T] {
 	return ListRange[T](t.db, offset, groupBy, orderBy, limit, listAttrs...)

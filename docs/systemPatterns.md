@@ -55,6 +55,16 @@ func ListRows[T any](db querier, previous int, groupBy, orderBy string, numRows 
 func ListRange[T any](db querier, offset int, groupBy, orderBy string, limit int, listAttrs ...any) iter.Seq2[int, T]
 ```
 
+| Function | Returns | Page Size | Role |
+|----------|---------|-----------|------|
+| `List` | `([]T, int, error)` | Default (10, configurable) | Quick convenience — delegates to `ListRows` |
+| `ListRows` | `([]T, int, error)` | Explicit `numRows` | **Preferred** for explicit pagination |
+| `ListRange` | `iter.Seq2[int, T]` | Explicit `limit` | Core lazy iterator — memory-efficient, JOINs, context |
+| `QueryRange` | `iter.Seq[T]` | Caller's SQL | Raw SQL escape hatch — bypasses query generation |
+| `Table.List` | `iter.Seq2[int, T]` | Explicit `limit` | Wrapper delegation to `ListRange` |
+
+Relationship: `List` → thin wrapper over `ListRows` with default page size. `ListRows` → collects from `ListRange` iterator into a slice. `ListRange` → core lazy iterator. `QueryRange` → separate raw SQL path. `Table.List` → delegates to `ListRange`.
+
 The `Table[T]` wrapper provides a method-based API for convenience:
 
 ```go

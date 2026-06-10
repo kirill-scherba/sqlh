@@ -75,3 +75,84 @@ func Example() {
 	// User: Alice <alice@example.com>
 	// User: Bob <bob@example.com>
 }
+
+// ExampleListRows demonstrates explicit paginated listing using ListRows.
+func ExampleListRows() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table and insert sample data
+	if err := Create[ExampleUser](db); err != nil {
+		log.Fatal(err)
+	}
+	names := []string{"Alice", "Bob", "Charlie", "Dave", "Eve"}
+	for _, name := range names {
+		if err := Insert(db, ExampleUser{Name: name, Email: name + "@example.com"}); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Paginate through users in pages of 3
+	offset := 0
+	page := 1
+	for {
+		users, next, err := ListRows[ExampleUser](db, offset, "", "name ASC", 3)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Page %d (offset=%d): %d users\n", page, offset, len(users))
+		for _, u := range users {
+			fmt.Printf("  - %s\n", u.Name)
+		}
+		if len(users) < 3 {
+			break
+		}
+		offset = next
+		page++
+	}
+
+	// Output:
+	// Page 1 (offset=0): 3 users
+	//   - Alice
+	//   - Bob
+	//   - Charlie
+	// Page 2 (offset=3): 2 users
+	//   - Dave
+	//   - Eve
+}
+
+// ExampleListRange demonstrates lazy iteration using the Go 1.25 iterator.
+func ExampleListRange() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table and insert sample data
+	if err := Create[ExampleUser](db); err != nil {
+		log.Fatal(err)
+	}
+	for _, name := range []string{"Alice", "Bob", "Charlie"} {
+		if err := Insert(db, ExampleUser{Name: name, Email: name + "@example.com"}); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Iterate lazily with an error callback
+	for i, user := range ListRange[ExampleUser](db, 0, "", "name ASC", 0,
+		func(e error) { log.Fatal(e) },
+	) {
+		fmt.Printf("%d: %s\n", i, user.Name)
+	}
+
+	// Output:
+	// 0: Alice
+	// 1: Bob
+	// 2: Charlie
+}
