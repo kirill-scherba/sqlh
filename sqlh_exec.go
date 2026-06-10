@@ -384,19 +384,109 @@ func extractColumn(field string) string {
 	return field
 }
 
+// buildUpsertSQL generates a database-native UPSERT SQL statement.
+// Returns a non-empty string when dialect is one of the supported drivers
+// (postgres, mysql, sqlite). For unsupported drivers it returns "" so
+// the caller falls back to the legacy SELECT-then-INSERT/UPDATE path.
+func buildUpsertSQL[T any](conflictFields, fieldNames []string, dialect string) (string, error) {
+	insertStmt, err := query.Insert[T]()
+	if err != nil {
+		return "", err
+	}
+	// Drop trailing semicolon so we can append the conflict clause.
+	if len(insertStmt) > 0 && insertStmt[len(insertStmt)-1] == ';' {
+		insertStmt = insertStmt[:len(insertStmt)-1]
+	}
+
+	switch dialect {
+	case dialectPostgreSQL:
+		var assigns []string
+		for _, f := range fieldNames {
+			assigns = append(assigns, fmt.Sprintf("%s = EXCLUDED.%s", f, f))
+		}
+		conflict := strings.Join(conflictFields, ", ")
+		if conflict == "" {
+			return fmt.Sprintf("%s ON CONFLICT DO UPDATE SET %s;",
+				insertStmt, strings.Join(assigns, ", ")), nil
+		}
+		return fmt.Sprintf("%s ON CONFLICT (%s) DO UPDATE SET %s;",
+			insertStmt, conflict, strings.Join(assigns, ", ")), nil
+
+	case dialectSQLite:
+		var assigns []string
+		for _, f := range fieldNames {
+			assigns = append(assigns, fmt.Sprintf("%s = excluded.%s", f, f))
+		}
+		conflict := strings.Join(conflictFields, ", ")
+		if conflict == "" {
+			return fmt.Sprintf("%s ON CONFLICT DO UPDATE SET %s;",
+				insertStmt, strings.Join(assigns, ", ")), nil
+		}
+		return fmt.Sprintf("%s ON CONFLICT (%s) DO UPDATE SET %s;",
+			insertStmt, conflict, strings.Join(assigns, ", ")), nil
+
+	case dialectMySQL:
+		var assigns []string
+		for _, f := range fieldNames {
+			assigns = append(assigns, fmt.Sprintf("%s = VALUES(%s)", f, f))
+		}
+		return fmt.Sprintf("%s ON DUPLICATE KEY UPDATE %s;",
+			insertStmt, strings.Join(assigns, ", ")), nil
+
+	default:
+		return "", nil
+	}
+}
+
 // Set sets a row in T database table.
 //
 // The function is atomic and uses a transaction.
 // The function takes a list of Where condition as input parameter.
-// The function checks if the row is found in the database.
-// If the row is not found, the function inserts a new row.
-// If the row is found, the function updates the row.
-// If multiple rows are found, the function returns an error with message "multiple rows found".
+// For PostgreSQL, SQLite, and MySQL it uses database-native UPSERT
+// (ON CONFLICT / ON DUPLICATE KEY UPDATE), providing true atomicity
+// without the race window of SELECT-then-INSERT/UPDATE.
+// For unsupported or unknown drivers it falls back to the legacy
+// SELECT-then-INSERT/UPDATE behaviour.
 func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 
 	// Detect dialect (needed for PG placeholder rebinding)
 	dialect := detectDialect(db)
 
+	// Extract conflict columns from Where fields.
+	var conflictFields []string
+	for _, w := range wheres {
+		conflictFields = append(conflictFields, extractColumn(w.Field))
+	}
+
+	// Attempt to generate native UPSERT SQL.
+	fieldNames := query.Fields[T]()
+	upsertSQL, upsertErr := buildUpsertSQL[T](conflictFields, fieldNames, dialect)
+	if upsertErr != nil {
+		return upsertErr
+	}
+
+	if upsertSQL != "" {
+		// Native UPSERT supported -- execute atomically.
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err != nil {
+				tx.Rollback()
+				return
+			}
+			err = tx.Commit()
+		}()
+		args, errArgs := query.Args(row, forWrite)
+		if errArgs != nil {
+			return errArgs
+		}
+		_, err = execTx(tx, upsertSQL, dialect, args...)
+		return err
+	}
+
+	// Fallback: legacy SELECT-then-INSERT/UPDATE path.
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
