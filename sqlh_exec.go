@@ -349,6 +349,41 @@ func updateOne[T any](tx *sql.Tx, dialect string, attr UpdateAttr[T]) (err error
 	return
 }
 
+// extractColumn extracts the bare column name from a Where.Field string by
+// stripping the trailing operator. It handles all documented operators:
+// =, >, <, >=, <=, <>, !=, LIKE, IN, BETWEEN, IS NULL, IS NOT NULL.
+//
+// Longer operators are checked first to avoid partial matches (e.g. >= vs =).
+// Examples:
+//   "id=" → "id"
+//   "age>=" → "age"
+//   "name LIKE" → "name"
+//   "deleted IS NULL" → "deleted"
+func extractColumn(field string) string {
+	field = strings.TrimSpace(field)
+	operators := []string{
+		" IS NOT NULL",
+		" IS NULL",
+		" NOT IN",
+		" LIKE",
+		" IN",
+		" BETWEEN",
+		">=",
+		"<=",
+		"<>",
+		"!=",
+		">",
+		"<",
+		"=",
+	}
+	for _, op := range operators {
+		if strings.HasSuffix(field, op) {
+			return strings.TrimSpace(field[:len(field)-len(op)])
+		}
+	}
+	return field
+}
+
 // Set sets a row in T database table.
 //
 // The function is atomic and uses a transaction.
