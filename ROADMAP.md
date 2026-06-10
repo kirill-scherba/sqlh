@@ -44,12 +44,23 @@ This document outlines the planned features and improvements for the `sqlh` pack
 
   No future work needed — the `db_key` tag already generates these in `CREATE TABLE`.
 
-### Developer Experience
+### API Unification (v1.0.0 consideration)
 
-- **Raw SQL Fragments:** Allow raw SQL injection into generated queries for complex cases.
-- **Transactional Reads:** Allow `Get`/`List` within an existing transaction (`*sql.Tx`).
-- **`IN` Operator Shortcuts:** Dedicated API for `WHERE id IN (?, ?, ?)` queries.
-- **Aggregate Functions:** `GROUP BY`, `HAVING`, `SUM()`, `AVG()`, `MIN()`, `MAX()` support.
+- **Options-based List API:** Consider a single `List` function with an options
+  struct for v1.0.0, replacing the three-materialized-vs-iterator split:
+  ```go
+  type ListOpts struct {
+      Offset   int
+      Limit    int
+      GroupBy  string
+      OrderBy  string
+      Materialize bool  // true -> []T; false -> iter.Seq2[int, T]
+  }
+  func List[T any](db querier, opts ListOpts, listAttrs ...any) (...)
+  ```
+  This would consolidate `List`/`ListRows`/`ListRange` into one entry point
+  without losing expressiveness. Requires careful migration path for existing
+  callers.
 
 ### Performance
 

@@ -55,7 +55,8 @@ func main() {
 	}
 	fmt.Printf("Found: %s <%s> (ID=%d)\n", user.Name, user.Email, user.ID)
 
-	// List users
+	// List users (quick convenience — 10 rows default)
+	// For explicit pagination use ListRows; for lazy iteration use ListRange.
 	users, _, err := sqlh.List[User](db, 0, "", "name ASC")
 	if err != nil {
 		log.Fatal(err)

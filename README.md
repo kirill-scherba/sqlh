@@ -123,7 +123,7 @@ func main() {
     }
     fmt.Println("Updated Alice's email.")
 
-    // List all users
+    // List all users (quick convenience — 10 rows default)
     users, pagination, err := sqlh.List[User](db, 0, "", "name ASC")
     if err != nil {
         log.Fatalf("failed to list users: %v", err)
@@ -218,6 +218,17 @@ ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 users, _, err := sqlh.List[User](db, 0, "", "name ASC", ctx)
 ```
+
+## Choosing the Right List API
+
+| Function | Returns | When to use |
+|----------|---------|-------------|
+| `List` | `([]T, int, error)` | Quick convenience with default page size (10 rows) |
+| `ListRows` | `([]T, int, error)` | Explicit page-size control for pagination loops |
+| `ListRange` | `iter.Seq2[int, T]` | Lazy/streaming iteration, JOIN queries, context cancellation |
+| `QueryRange` | `iter.Seq[T]` | Raw SQL queries beyond generated query coverage |
+
+See [docs/list-api-guidance.md](docs/list-api-guidance.md) for detailed guidance.
 
 ## Set (Upsert)
 
