@@ -141,20 +141,23 @@ For aggregate joins (`COUNT`, `SUM`, etc.), prefer an explicit `query.Select` pl
 
 ## Custom Table Name
 
-Override the table name using `db_table_name` on a `_ bool` field, or define a `TableName()` method:
+Override the table name using `db_table_name` on a sentinel `_` field, or define
+a `TableName()` method.
 
 ```go
 type SomeTable struct {
-    _    bool      `db_table_name:"custom_table"`
+    _    any       `db_table_name:"custom_table"`
     Name string    `db:"name"`
     Cost float64   `db:"cost"`
 }
 // Generates: CREATE TABLE IF NOT EXISTS custom_table (name text, cost double)
 ```
 
+> `any`, `string`, and `bool` are all valid sentinel types — they behave identically because sqlh skips every field whose name is `_`.
+
 Priority order (highest to lowest):
 1. **`TableName()` method** — `func (t *SomeTable) TableName() string { return "my_table" }`
-2. **`db_table_name` struct tag** — `_ bool \`db_table_name:"custom_table"\``
+2. **`db_table_name` struct tag** — `_ any \`db_table_name:"custom_table"\`` (or `string`, `bool`)
 3. **Auto-generated snake_case** from type name (e.g. `SomeTable` → `some_table`)
 
 Example with method:

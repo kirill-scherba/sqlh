@@ -241,25 +241,34 @@ err := sqlh.Set(db, User{Name: "Dave", Email: "dave@example.com"},
 
 ## Custom Table Name
 
-Override the auto-generated snake_case table name using a `db_table_name` struct tag on a `_ bool` field, or define a `TableName() string` method on your struct.
+Override the auto-generated snake_case table name using a `db_table_name`
+struct tag on a sentinel `_` field, or define a `TableName() string` method on
+your struct.
+
+> **Why `_`?** Fields named `_` are ignored by sqlh as columns — they carry
+> only struct tags. The actual Go type of the sentinel field does not matter;
+> `any`, `string`, and `bool` all behave identically. This keeps table-name
+> overrides self-contained and backward-compatible.
 
 **Priority order (highest to lowest):**
 
 1. **`TableName()` method** — highest priority
-2. **`db_table_name` struct tag** — on `_ bool` field
+2. **`db_table_name` struct tag** — on a `_` sentinel field (any Go type)
 3. **Auto-generated snake_case** from type name (e.g. `MyTable` → `my_table`)
 
 ### Using `db_table_name` tag
 
 ```go
 type Product struct {
-    _    bool      `db_table_name:"inventory"`
+    _    any       `db_table_name:"inventory"`
     ID   int64     `db:"id" db_key:"primary key autoincrement"`
     Name string    `db:"name"`
     Cost float64   `db:"cost"`
 }
 // Generates: CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, cost REAL)
 ```
+
+> `string` and `bool` are also valid sentinel types — they behave identically.
 
 ### Using `TableName()` method
 

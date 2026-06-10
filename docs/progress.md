@@ -67,7 +67,7 @@
 - `db_type` tag for SQL type override — ✅ functional
 - `db_key` tag for constraints (`primary key`, `autoincrement`, `unique`,
   `not null`, etc.) — ✅ functional
-- `db_table_name` tag for custom table name override — ✅ functional
+- `db_table_name` tag for custom table name override (any `_` sentinel type: `any`, `string`, `bool`, etc.) — ✅ functional
 - `TableName()` interface for dynamic table name resolution — ✅ functional
 - Nested struct support for JOINs — ✅ functional
 

@@ -93,6 +93,82 @@ func TestGetMeta_tableName(t *testing.T) {
 	}
 }
 
+// TestGetMeta_dbTableName_sentinelTypes verifies that db_table_name works on
+// any sentinel type (_ bool, _ any, _ string). The field is skipped from
+// field lists regardless of its Go type.
+func TestGetMeta_dbTableName_sentinelTypes(t *testing.T) {
+	t.Run("_bool", func(t *testing.T) {
+		type T struct {
+			_    bool   `db_table_name:"t_bool"`
+			Name string `db:"name"`
+		}
+		meta := getMeta(reflect.TypeOf(T{}))
+		if meta.tableName != "t_bool" {
+			t.Errorf("tableName = %q, want %q", meta.tableName, "t_bool")
+		}
+		wantAll := []string{"name"}
+		if !reflect.DeepEqual(meta.fieldsAll, wantAll) {
+			t.Errorf("fieldsAll = %v, want %v", meta.fieldsAll, wantAll)
+		}
+		if len(meta.fields) != 2 || !meta.fields[0].skip {
+			t.Errorf("expected field 0 (_) to be skipped, got %+v", meta.fields[0])
+		}
+	})
+	t.Run("_any", func(t *testing.T) {
+		type T struct {
+			_    any    `db_table_name:"t_any"`
+			Name string `db:"name"`
+		}
+		meta := getMeta(reflect.TypeOf(T{}))
+		if meta.tableName != "t_any" {
+			t.Errorf("tableName = %q, want %q", meta.tableName, "t_any")
+		}
+		wantAll := []string{"name"}
+		if !reflect.DeepEqual(meta.fieldsAll, wantAll) {
+			t.Errorf("fieldsAll = %v, want %v", meta.fieldsAll, wantAll)
+		}
+		if len(meta.fields) != 2 || !meta.fields[0].skip {
+			t.Errorf("expected field 0 (_) to be skipped, got %+v", meta.fields[0])
+		}
+	})
+	t.Run("_string", func(t *testing.T) {
+		type T struct {
+			_    string `db_table_name:"t_string"`
+			Name string `db:"name"`
+		}
+		meta := getMeta(reflect.TypeOf(T{}))
+		if meta.tableName != "t_string" {
+			t.Errorf("tableName = %q, want %q", meta.tableName, "t_string")
+		}
+		wantAll := []string{"name"}
+		if !reflect.DeepEqual(meta.fieldsAll, wantAll) {
+			t.Errorf("fieldsAll = %v, want %v", meta.fieldsAll, wantAll)
+		}
+		if len(meta.fields) != 2 || !meta.fields[0].skip {
+			t.Errorf("expected field 0 (_) to be skipped, got %+v", meta.fields[0])
+		}
+	})
+	t.Run("_any_with_index_tag", func(t *testing.T) {
+		// Combined db_table_name + db_key on the same sentinel _ string
+		type T struct {
+			_    string `db:"-" db_table_name:"t_combined"`
+			_    string `db:"-" db_key:"KEY name_idx (name)"`
+			Name string `db:"name"`
+		}
+		meta := getMeta(reflect.TypeOf(T{}))
+		if meta.tableName != "t_combined" {
+			t.Errorf("tableName = %q, want %q", meta.tableName, "t_combined")
+		}
+		wantAll := []string{"name"}
+		if !reflect.DeepEqual(meta.fieldsAll, wantAll) {
+			t.Errorf("fieldsAll = %v, want %v", meta.fieldsAll, wantAll)
+		}
+		if len(meta.fields) != 3 || !meta.fields[0].skip || !meta.fields[1].skip {
+			t.Errorf("expected fields 0 and 1 to be skipped, got %+v", meta.fields)
+		}
+	})
+}
+
 // TestGetMeta_namedCompositeProjection verifies compatibility with the old
 // fields/Name behavior: a named first struct field defines the base table and
 // projection for composite JOIN result types.

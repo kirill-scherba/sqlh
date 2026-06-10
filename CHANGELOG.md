@@ -9,6 +9,9 @@ It's intended to be a human-readable history of changes.
 
 ### Added
 
+- Support `any` and `string` (in addition to `bool`) as sentinel types for
+  `db_table_name` table-name override. The Go type of a `_` sentinel field is
+  irrelevant; all are skipped identically. Added tests and documentation. (#18)
 - `query.ArgsApply` — correctly spelled replacement for the misspelled
   `query.ArgsAppay`. Both functions have identical behaviour; new code should
   use `ArgsApply`. (#5)

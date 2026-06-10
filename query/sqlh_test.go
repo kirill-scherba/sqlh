@@ -7,6 +7,7 @@ package query
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -341,7 +342,7 @@ func TestTableName(t *testing.T) {
 
 	})
 
-	t.Run("By tag", func(t *testing.T) {
+	t.Run("By tag on regular field", func(t *testing.T) {
 
 		type SomeTable struct {
 			Name string    `db:"name" db_table_name:"some_table"`
@@ -355,6 +356,45 @@ func TestTableName(t *testing.T) {
 
 	})
 
+	t.Run("By tag on _bool sentinel", func(t *testing.T) {
+
+		type SomeTable struct {
+			_    bool      `db_table_name:"bool_tbl"`
+			Name string    `db:"name"`
+			Cost float64   `db:"cost"`
+		}
+
+		name := Name[SomeTable]()
+		require.Equal(t, "bool_tbl", name)
+
+	})
+
+	t.Run("By tag on _any sentinel", func(t *testing.T) {
+
+		type SomeTable struct {
+			_    any       `db_table_name:"any_tbl"`
+			Name string    `db:"name"`
+			Cost float64   `db:"cost"`
+		}
+
+		name := Name[SomeTable]()
+		require.Equal(t, "any_tbl", name)
+
+	})
+
+	t.Run("By tag on _string sentinel", func(t *testing.T) {
+
+		type SomeTable struct {
+			_    string    `db_table_name:"string_tbl"`
+			Name string    `db:"name"`
+			Cost float64   `db:"cost"`
+		}
+
+		name := Name[SomeTable]()
+		require.Equal(t, "string_tbl", name)
+
+	})
+
 	t.Run("By method", func(t *testing.T) {
 
 		name := Name[SomeTable]()
@@ -362,6 +402,65 @@ func TestTableName(t *testing.T) {
 
 	})
 
+}
+
+// TestTableWithAnySentinel verifies a full CREATE TABLE + INSERT + SELECT
+// round-trip when the db_table_name tag lives on a _ any sentinel field.
+func TestTableWithAnySentinel(t *testing.T) {
+
+	type AnySentinel struct {
+		_    any     `db_table_name:"any_sentinel"`
+		Name string  `db:"name" db_type:"varchar(36)" db_key:"not null primary key"`
+		Data []byte  `db:"data"`
+	}
+
+	// Open in-memory database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	require.NoError(t, err, "failed to open database")
+	defer db.Close()
+
+	// Create table
+	createQuery, err := Table[AnySentinel]()
+	require.NoError(t, err)
+	t.Log(createQuery)
+	require.Contains(t, createQuery, "CREATE TABLE IF NOT EXISTS any_sentinel")
+	require.True(t, strings.HasSuffix(createQuery, "(name varchar(36) not null primary key, data blob);"),
+		"unexpected columns in CREATE TABLE: %s", createQuery)
+
+	_, err = db.Exec(createQuery)
+	require.NoError(t, err, "failed to create table")
+
+	// Insert
+	insertQuery, err := Insert[AnySentinel]()
+	require.NoError(t, err)
+	t.Log(insertQuery)
+	require.Contains(t, insertQuery, "INSERT INTO any_sentinel")
+
+	row := AnySentinel{Name: "test", Data: []byte("hello")}
+	args, err := Args(row, true)
+	require.NoError(t, err)
+	_, err = db.Exec(insertQuery, args...)
+	require.NoError(t, err, "failed to insert row")
+
+	// Select
+	selectQuery, err := Select[AnySentinel](&SelectAttr{
+		Paginator: &Paginator{0, 1},
+	})
+	require.NoError(t, err)
+	t.Log(selectQuery)
+	require.Contains(t, selectQuery, "FROM any_sentinel")
+
+	var row2 AnySentinel
+	args2, err := Args(row2, false)
+	require.NoError(t, err)
+	err = db.QueryRow(selectQuery).Scan(args2...)
+	require.NoError(t, err, "failed to select row")
+
+	err = ArgsApply(&row2, args2)
+	require.NoError(t, err)
+
+	require.Equal(t, "test", row2.Name)
+	require.Equal(t, []byte("hello"), row2.Data)
 }
 
 type SomeTable struct {
