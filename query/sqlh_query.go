@@ -161,6 +161,18 @@ func Table[T any]() (string, error) {
 
 		field := t.Field(i)
 
+		// Sentinel: fields named "_" carry tags such as db_table_name,
+		// db_key, or db_type but do not represent real columns.
+		// Skip them before type inference so sentinel types like
+		// `any` (reflect.Interface) do not trigger "unsupported type".
+		if field.Name == "_" {
+			dbKey := field.Tag.Get("db_key")
+			if len(dbKey) > 0 {
+				dbFields = append(dbFields, strings.TrimRight(dbKey, " "))
+			}
+			continue
+		}
+
 		// Get field name
 		fieldName, ok := getFieldName(field)
 		if !ok {
@@ -175,14 +187,6 @@ func Table[T any]() (string, error) {
 
 		// Get db_key tag
 		dbKey := field.Tag.Get("db_key")
-
-		// Use db_key text only if field name is "_"
-		if fieldName == "_" {
-			if len(dbKey) > 0 {
-				dbFields = append(dbFields, strings.TrimRight(dbKey, " "))
-			}
-			continue
-		}
 
 		dbFields = append(
 			dbFields,
