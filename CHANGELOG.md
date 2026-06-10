@@ -12,6 +12,10 @@ It's intended to be a human-readable history of changes.
 - `query.ArgsApply` — correctly spelled replacement for the misspelled
   `query.ArgsAppay`. Both functions have identical behaviour; new code should
   use `ArgsApply`. (#5)
+- **Native database UPSERT for `Set`**: PostgreSQL (`ON CONFLICT ... DO UPDATE`),
+  SQLite (`ON CONFLICT ... DO UPDATE`), MySQL (`ON DUPLICATE KEY UPDATE`).
+  Falls back to the legacy SELECT-then-INSERT/UPDATE path for unsupported or
+  unknown drivers. (#13)
 - Unit tests for `isAutoIncrement` case-insensitivity, lock-error detection,
   `execRetries` behaviour, a 200-row `Update` batch regression test, and a
   compatibility test for the deprecated `ArgsAppay` alias.

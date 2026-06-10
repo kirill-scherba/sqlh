@@ -112,8 +112,11 @@
 ## What's Planned
 
 ### Phase 2: Advanced Features & Data Integrity (MEDIUM)
-- ❌ **Native UPSERT**: `ON CONFLICT DO UPDATE` (currently Set uses
-  SELECT-then-INSERT/UPDATE)
+- ✅ **Native UPSERT**: PostgreSQL (`ON CONFLICT DO UPDATE`), SQLite
+  (`ON CONFLICT DO UPDATE`), MySQL (`ON DUPLICATE KEY UPDATE`) — implemented
+  in `Set[T]()` with automatic fallback to SELECT-then-INSERT/UPDATE for
+  unsupported drivers. Includes `buildUpsertSQL[T]`, `extractColumn`, and
+  comprehensive tests for all three dialects. See issue #13.
 - ❌ **Aggregate functions**: GROUP BY, HAVING, SUM, AVG, MIN, MAX
 - ❌ **Dedicated IN operator API**: Structured API for `WHERE id IN (?,?,?)`
 
