@@ -237,4 +237,29 @@ func TestMySQL(t *testing.T) {
 		}
 
 	})
+
+	// Native UPSERT test for MySQL
+	t.Run("Set (native UPSERT)", func(t *testing.T) {
+		// Upsert insert new row
+		err := Set(db, TestMySQLTable{Name: "SetUser", Data: []byte("new_data")},
+			Where{"name=", "SetUser"})
+		require.NoError(t, err)
+		defer Delete[TestMySQLTable](db, Where{"name=", "SetUser"})
+
+		retrieved, err := Get[TestMySQLTable](db, Where{"name=", "SetUser"})
+		require.NoError(t, err)
+		require.NotNil(t, retrieved)
+		assert.Equal(t, []byte("new_data"), retrieved.Data)
+		assert.Equal(t, "SetUser", retrieved.Name)
+
+		// Upsert update existing row
+		err = Set(db, TestMySQLTable{Name: "SetUser", Data: []byte("updated_data")},
+			Where{"name=", "SetUser"})
+		require.NoError(t, err)
+
+		retrieved, err = Get[TestMySQLTable](db, Where{"name=", "SetUser"})
+		require.NoError(t, err)
+		require.NotNil(t, retrieved)
+		assert.Equal(t, []byte("updated_data"), retrieved.Data)
+	})
 }
