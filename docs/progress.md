@@ -85,7 +85,7 @@
   - `SERIAL`/`BIGSERIAL` auto-increment support
   - Automatic `?` → `$N` placeholder rebinding
   - PG-compatible DDL generation
-- SQL Server `SCOPE_IDENTITY` — ✅ partial
+- SQL Server `SCOPE_IDENTITY` — ✅ partial (driver detection and last-insert-ID only; no CRUD tests, no CI; not production-ready)
 
 ### Performance Optimisations
 - **Metadata cache**: Struct reflection cached by `reflect.Type` — ✅ complete

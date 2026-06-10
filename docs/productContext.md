@@ -38,7 +38,7 @@ Go developers working with SQL databases face a significant amount of repetitive
 1. **Minimal Configuration**: Define a struct with tags, call `query.Table[T]()` to get `CREATE TABLE`, use `sqlh.Insert`, `sqlh.Get`, etc. — no configuration files, no migrations to write
 2. **Intuitive API**: Function names mirror SQL operations (`Insert`, `Update`, `Get`, `List`, `Delete`)
 3. **Predictable Behavior**: Write operations are always transactional; errors are wrapped with clear context
-4. **Database-Agnostic by Default**: Works with SQLite out of the box; supports MySQL; extensible to PostgreSQL and SQL Server
+4. **Database-Agnostic by Default**: Works with SQLite out of the box; supports MySQL and PostgreSQL (both CI-tested). SQL Server support is experimental (driver detection and SCOPE_IDENTITY only; no integration tests or CI)
 5. **Progressive Enhancement**: Start with basic CRUD, add pagination (`ListRows`/`ListRange`), WHERE conditions (`Where` struct), JOINs as needed
 
 ## Key Differentiators from Alternatives

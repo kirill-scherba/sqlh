@@ -51,6 +51,14 @@ This document outlines the planned features and improvements for the `sqlh` pack
 - **`IN` Operator Shortcuts:** Dedicated API for `WHERE id IN (?, ?, ?)` queries.
 - **Aggregate Functions:** `GROUP BY`, `HAVING`, `SUM()`, `AVG()`, `MIN()`, `MAX()` support.
 
+### Database Coverage
+
+- **SQL Server CI (optional, future):** Add integration tests for SQL Server
+  using a containerized test service (e.g., `mcr.microsoft.com/mssql/server`
+  Docker image). Opt-in via `SQLH_MSSQL_TEST=1` environment variable,
+  following the pattern established for MySQL and PostgreSQL. No timeline
+  commitment — depends on user demand and CI infrastructure availability.
+
 ### Performance
 
 - **Batch Operations:** Batch insert/update multiple rows in a single query.
