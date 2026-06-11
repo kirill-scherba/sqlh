@@ -183,27 +183,27 @@ Reproduce with:
 cd bench && go test -bench=. -benchmem -benchtime=1s
 ```
 
-### CRUD Latency (ns/op) — best of 5 runs
+### CRUD Throughput (ops/sec)
 
 | Operation      | raw sql  | sqlx     | GORM     | **sqlh** |
 |----------------|----------|----------|----------|----------|
-| **Insert**     | 6,279    | 7,678    | 28,112   | **11,602** |
-| **Get by PK**  | 5,974    | 6,700    | 12,819   | **14,435** |
-| **List all**   | 85,218   | 112,062  | 147,119  | **136,433** |
-| **List limit** | 19,628   | 23,391   | 26,579   | **23,228** |
-| **Update**     | 4,419    | 5,634    | 15,611   | **11,871** |
-| **Delete**     | 5,951    | 6,083    | 24,697   | **16,519** |
+| **Insert**     | 158,856  | 131,337  | 35,288   | **85,631** |
+| **Get by PK**  | 169,090  | 150,082  | 77,489   | **73,601** |
+| **List all**   | 11,857   | 9,076    | 6,775    | **7,607** |
+| **List limit** | 51,000   | 43,381   | 37,666   | **44,204** |
+| **Update**     | 226,963  | 177,242  | 65,828   | **84,083** |
+| **Delete**     | 170,503  | 163,185  | 41,375   | **60,503** |
 
-### Memory Allocations (B/op)
+### Memory Allocations
 
-| Operation      | raw sql | sqlx | GORM  | **sqlh** |
-|----------------|---------|------|-------|----------|
-| **Insert**     | 328     | 721  | 5,535 | **1,274** |
-| **Get by PK**  | 792     | 976  | 3,953 | **2,593** |
-| **List all**   | 23,744  | 26,376 | 27,671 | **26,405** |
-| **List limit** | 3,120   | 3,624 | 6,146 | **3,960** |
-| **Update**     | 296     | 680  | 5,080 | **1,394** |
-| **Delete**     | 216     | 216  | 5,492 | **1,143** |
+| Operation      | raw sql           | sqlx              | GORM               | **sqlh**           |
+|----------------|-------------------|-------------------|--------------------|--------------------|
+| **Insert**     | 328 B, 12 alloc   | 721 B, 20 alloc   | 5,536 B, 82 alloc  | **1,274 B, 39 alloc** |
+| **Get by PK**  | 792 B, 27 alloc   | 976 B, 31 alloc   | 3,952 B, 66 alloc  | **2,593 B, 78 alloc** |
+| **List all**   | 23,744 B, 528 alloc | 26,376 B, 632 alloc | 27,669 B, 946 alloc | **26,394 B, 745 alloc** |
+| **List limit** | 3,120 B, 76 alloc  | 3,624 B, 91 alloc  | 6,145 B, 141 alloc | **3,958 B, 115 alloc** |
+| **Update**     | 296 B, 10 alloc    | 680 B, 19 alloc    | 5,079 B, 68 alloc  | **1,393 B, 43 alloc** |
+| **Delete**     | 216 B, 7 alloc     | 216 B, 7 alloc     | 5,483 B, 67 alloc  | **1,139 B, 37 alloc** |
 
 ### Key Observations
 
@@ -218,8 +218,8 @@ cd bench && go test -bench=. -benchmem -benchtime=1s
 - **ListAll** is dominated by the cost of scanning 100 rows. All libraries show
   similar performance here, with raw sql slightly ahead due to minimal overhead.
 
-> **Environment:** Linux AMD Ryzen 9 3900, Go 1.25.2, SQLite in-memory.
-> Run `cd bench && go test -bench=. -benchmem -benchtime=1s -count=5` on your
+> **Environment:** Linux AMD Ryzen 9 3900, Go 1.26.3, SQLite in-memory.
+> Run `cd bench && go test -bench=. -benchmem -benchtime=1s` on your
 > own hardware for an apples-to-apples comparison.
 
 ## Table Wrapper API
