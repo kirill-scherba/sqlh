@@ -156,3 +156,253 @@ func ExampleListRange() {
 	// 1: Bob
 	// 2: Charlie
 }
+
+// ExampleCreateTable demonstrates creating a SQL table via the Table[T] wrapper.
+func ExampleCreateTable() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table from struct and get a typed Table[T] handle
+	tbl, err := CreateTable[ExampleUser](db)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Table created: %T\n", tbl)
+
+	// Output:
+	// Table created: *sqlh.Table[github.com/kirill-scherba/sqlh.ExampleUser]
+}
+
+// ExampleTable_Insert demonstrates inserting rows via the Table[T] wrapper.
+func ExampleTable_Insert() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table and get Table[T] wrapper
+	tbl, err := CreateTable[ExampleUser](db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Insert multiple rows through the wrapper
+	if err := tbl.Insert(
+		ExampleUser{Name: "Alice", Email: "alice@example.com"},
+		ExampleUser{Name: "Bob", Email: "bob@example.com"},
+	); err != nil {
+		log.Fatal(err)
+	}
+
+	// Verify insertion by counting rows
+	count, err := tbl.Count()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Inserted:", count)
+
+	// Output:
+	// Inserted: 2
+}
+
+// ExampleTable_Get demonstrates retrieving a single row via the Table[T] wrapper.
+func ExampleTable_Get() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table and get Table[T] wrapper
+	tbl, err := CreateTable[ExampleUser](db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Insert a sample row
+	if err := tbl.Insert(ExampleUser{Name: "Alice", Email: "alice@example.com"}); err != nil {
+		log.Fatal(err)
+	}
+
+	// Get the row by name
+	user, err := tbl.Get(Where{Field: "name=", Value: "Alice"})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Found: %s <%s>\n", user.Name, user.Email)
+
+	// Output:
+	// Found: Alice <alice@example.com>
+}
+
+// ExampleTable_Set demonstrates upsert via the Table[T] wrapper.
+// The first call inserts a new row; the second call updates it.
+func ExampleTable_Set() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table and get Table[T] wrapper
+	tbl, err := CreateTable[ExampleUser](db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Upsert: row does not exist yet, so Set performs an INSERT
+	if err := tbl.Set(
+		ExampleUser{Name: "Charlie", Email: "charlie@old.com"},
+		Where{Field: "name=", Value: "Charlie"},
+	); err != nil {
+		log.Fatal(err)
+	}
+	u1, err := tbl.Get(Where{Field: "name=", Value: "Charlie"})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("After insert:", u1.Email)
+
+	// Upsert: row exists by unique key, so Set performs an UPDATE
+	if err := tbl.Set(
+		ExampleUser{Name: "Charlie", Email: "charlie@new.com"},
+		Where{Field: "name=", Value: "Charlie"},
+	); err != nil {
+		log.Fatal(err)
+	}
+	u2, err := tbl.Get(Where{Field: "name=", Value: "Charlie"})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("After update:", u2.Email)
+
+	// Output:
+	// After insert: charlie@old.com
+	// After update: charlie@new.com
+}
+
+// ExampleTable_Delete demonstrates deleting rows via the Table[T] wrapper.
+func ExampleTable_Delete() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table and get Table[T] wrapper
+	tbl, err := CreateTable[ExampleUser](db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Insert a sample row
+	if err := tbl.Insert(ExampleUser{Name: "Dave", Email: "dave@example.com"}); err != nil {
+		log.Fatal(err)
+	}
+
+	// Delete by condition
+	if err := tbl.Delete(Where{Field: "name=", Value: "Dave"}); err != nil {
+		log.Fatal(err)
+	}
+
+	// Verify deletion
+	count, err := tbl.Count()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Remaining:", count)
+
+	// Output:
+	// Remaining: 0
+}
+
+// ExampleTable_List demonstrates lazy iteration via the Table[T].List method.
+func ExampleTable_List() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table and get Table[T] wrapper
+	tbl, err := CreateTable[ExampleUser](db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Insert sample rows
+	for _, name := range []string{"Alice", "Bob", "Charlie", "Dave", "Eve"} {
+		if err := tbl.Insert(ExampleUser{Name: name, Email: name + "@example.com"}); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Iterate lazily with an error callback
+	for i, user := range tbl.List(0, "", "name ASC", 0,
+		func(e error) { log.Fatal(e) },
+	) {
+		fmt.Printf("%d: %s\n", i, user.Name)
+	}
+
+	// Output:
+	// 0: Alice
+	// 1: Bob
+	// 2: Charlie
+	// 3: Dave
+	// 4: Eve
+}
+
+// ExampleTable_Update demonstrates updating rows via the Table[T] wrapper.
+func ExampleTable_Update() {
+	// Open in-memory SQLite database
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create table and get Table[T] wrapper
+	tbl, err := CreateTable[ExampleUser](db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Insert a sample row
+	if err := tbl.Insert(ExampleUser{Name: "Eve", Email: "eve@old.com"}); err != nil {
+		log.Fatal(err)
+	}
+
+	// Get the row so we know its ID
+	u, err := tbl.Get(Where{Field: "name=", Value: "Eve"})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Update the row via wrapper
+	if err := tbl.Update(UpdateAttr[ExampleUser]{
+		Row:    ExampleUser{ID: u.ID, Name: "Eve", Email: "eve@new.com"},
+		Wheres: []Where{{Field: "id=", Value: u.ID}},
+	}); err != nil {
+		log.Fatal(err)
+	}
+
+	// Verify update
+	updated, err := tbl.Get(Where{Field: "id=", Value: u.ID})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Updated:", updated.Email)
+
+	// Output:
+	// Updated: eve@new.com
+}
