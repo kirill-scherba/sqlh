@@ -103,6 +103,7 @@
   pkg.go.dev — ✅ created
 - **SKILL.md**: AI-assistant user guide with quick reference and important
   rules — ✅ created
+- **examples/demo/**: Self-contained CRUD demo for animated GIF recording — ✅ created
 - **examples/basic/**: Insert, Get, List, Update, Delete demo — ✅ created
 - **examples/join/**: JOIN queries with nested structs — ✅ created
 - **examples/paginator/**: Pagination with `ListRows` offset/limit — ✅ created
@@ -110,6 +111,7 @@
 - **examples/iterators/**: `ListRange` with Go 1.25 iterators — ✅ created
 - **examples/context/**: Context cancellation with `ListRange` — ✅ created
 - **examples/crud/**: Full CRUD workflow example — ✅ created
+- **docs/demo.gif**: Animated terminal recording for README — ✅ created
 
 ## What's Planned
 
@@ -131,6 +133,12 @@
 - ❌ **Transactional reads**: Support `*sql.Tx` in Get/List
 - ❌ **Batch operations**: Batch insert/update multiple rows in a single query
 - ❌ **Connection pool tuning**: Built-in helpers for pool configuration
+
+## Completed Milestones
+
+| Milestone | Date | Details |
+|-----------|------|---------|
+| Animated GIF demo | 2026-06-11 | Added `docs/demo.gif` showing zero-boilerplate CRUD; new `examples/demo/` with `main.go` + `demo.tape`. Closes #25. |
 
 ## Known Issues
 
