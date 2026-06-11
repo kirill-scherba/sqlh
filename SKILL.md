@@ -40,7 +40,7 @@ sqlh.InsertId(db, User{Name: "Bob"})  // returns last inserted ID
 
 ### Get (single row)
 ```go
-user, err := sqlh.Get[User](db, sqlh.Where{Field: "id=", Value: 1})
+user, err := sqlh.Get[User](db, sqlh.Eq("id", 1))
 ```
 
 ### List (multiple rows)
@@ -54,7 +54,7 @@ users, nextOffset, err := sqlh.ListRows[User](db, 20, "", "name ASC", 10, where.
 // Preferred way to iterate query results. The iterator wraps rows.Next automatically.
 var listErr error
 for i, user := range sqlh.ListRange[User](db, 0, "", "name ASC", 0,
-    sqlh.Where{Field: "active=", Value: true},
+    sqlh.Eq("active", true),
     func(e error) { listErr = e },
     context.Background()) {
     fmt.Println(i, user.Name)
@@ -68,19 +68,19 @@ if listErr != nil {
 ```go
 err := sqlh.Update(db, sqlh.UpdateAttr[User]{
     Row:    User{Name: "Alice Updated"},
-    Wheres: []sqlh.Where{{Field: "id=", Value: 1}},
+    Wheres: []sqlh.Where{sqlh.Eq("id", 1)},
 })
 ```
 
 ### Delete
 ```go
-sqlh.Delete[User](db, sqlh.Where{Field: "id=", Value: 1})
+sqlh.Delete[User](db, sqlh.Eq("id", 1))
 ```
 
 ### Set (upsert)
 ```go
 // The 'name' field has db_key:"unique", so this becomes an upsert:
-sqlh.Set(db, Product{Name: "Laptop", Price: 999}, sqlh.Where{Field: "name=", Value: "Laptop"})
+sqlh.Set(db, Product{Name: "Laptop", Price: 999}, sqlh.Eq("name", "Laptop"))
 ```
 
 ## Table Wrapper API
@@ -88,12 +88,12 @@ sqlh.Set(db, Product{Name: "Laptop", Price: 999}, sqlh.Where{Field: "name=", Val
 ```go
 tbl, err := sqlh.CreateTable[User](db)
 tbl.Insert(User{Name: "Alice"})
-tbl.Get(sqlh.Where{Field: "id=", Value: 1})
+tbl.Get(sqlh.Eq("id", 1))
 tbl.Update(sqlh.UpdateAttr[User]{
     Row:    User{Name: "Bob"},
-    Wheres: []sqlh.Where{{Field: "id=", Value: 1}},
+    Wheres: []sqlh.Where{sqlh.Eq("id", 1)},
 })
-tbl.Delete(sqlh.Where{Field: "id=", Value: 1})
+tbl.Delete(sqlh.Eq("id", 1))
 for _, user := range tbl.List(0, "", "name ASC", 0, errFunc, ctx) {
     fmt.Println(user.Name)
 }
@@ -210,10 +210,19 @@ CREATE TABLE IF NOT EXISTS user_account (
 ## Where Clause
 
 ```go
-sqlh.Where{Field: "name=", Value: "Alice"}           // name = ?
-sqlh.Where{Field: "id>", Value: 5}                    // id > 5
-sqlh.Where{Field: "age>=", Value: 18}                 // age >= 18
-sqlh.Where{Field: "name LIKE", Value: "%Alice%"}      // name LIKE '%Alice%'
+sqlh.Eq("name", "Alice")              // name = ?
+sqlh.Ne("status", "deleted")          // status <> ?
+sqlh.Gt("id", 5)                      // id > 5
+sqlh.Gte("age", 18)                   // age >= 18
+sqlh.Lt("price", 100.0)               // price < 100.0
+sqlh.Lte("price", 100.0)              // price <= 100.0
+sqlh.Like("name", "%Alice%")          // name LIKE '%Alice%'
+sqlh.In("id", 1, 2, 3)               // id IN (1, 2, 3)
+sqlh.IsNull("deleted_at")              // deleted_at IS NULL
+sqlh.IsNotNull("created_at")           // created_at IS NOT NULL
+
+// Raw Where{Field, Value} is still available as a low-level escape hatch:
+sqlh.Where{Field: "custom_operator", Value: 42}
 ```
 
 ## Pagination

@@ -250,7 +250,7 @@ func Update[T any](wheres ...string) (string, error) {
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s;",
 		Name[T](),
 		strings.Join(fields, "=?,")+"=?",
-		strings.Join(wheres, "? AND ")+"?",
+		strings.Join(wheres, " AND "),
 	), nil
 }
 
@@ -434,16 +434,16 @@ func Delete[T any](wheres ...string) (string, error) {
 	// Join the where statements with " and "
 	var where string
 	if len(wheres) > 0 {
-		where = strings.Join(wheres, "? AND ")
+		where = strings.Join(wheres, " AND ")
 	}
 
 	// Add the where statement to the SQL query
 	if len(where) > 0 {
-		where = fmt.Sprintf(" where %s?", where)
+		where = fmt.Sprintf(" WHERE %s", where)
 	}
 
 	// Return the complete DELETE statement
-	return fmt.Sprintf("DELETE from %s%s;", Name[T](), where), nil
+	return fmt.Sprintf("DELETE FROM %s%s;", Name[T](), where), nil
 }
 
 // Args returns the arguments array for the given struct type.

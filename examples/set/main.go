@@ -41,7 +41,7 @@ func main() {
 
 	// Upsert: update stock if exists (Set = InsertOrUpdate)
 	sqlh.Set(db, Product{Name: "Laptop", Price: 999.99, Stock: 15},
-		sqlh.Where{Field: "name=", Value: "Laptop"})
+		sqlh.Eq("name", "Laptop"))
 	fmt.Println("Updated Laptop stock to 15")
 
 	// Insert another product

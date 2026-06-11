@@ -24,9 +24,11 @@
 ### Advanced WHERE Conditions
 - **OR operator**: `SetWheresJoinOr()` enables OR-joining of WHERE conditions —
   ✅ functional
-- **IN operator**: `Where{Field: "id IN", Value: ...}` supports list parameters
-  for simple IN clauses — ✅ functional
-- **LIKE / IS NULL / IS NOT NULL**: `Where{Field: "name LIKE", Value: "%foo%"}`
+- **IN operator**: `sqlh.In("id", ...)` supports list parameters with automatic
+  `?` placeholder expansion — ✅ functional
+- **LIKE / IS NULL / IS NOT NULL**: `sqlh.Like("name", "%foo%")`,
+  `sqlh.IsNull("deleted_at")`, `sqlh.IsNotNull("created_at")` — ✅ functional
+- **Type-safe WHERE helpers**: `Eq`, `Ne`, `Gt`, `Gte`, `Lt`, `Lte` constructors
   — ✅ functional
 
 ### Query Generation

@@ -54,7 +54,7 @@ func main() {
 	fmt.Println("Log entries for user_id=1:")
 	for _, e := range sqlh.ListRange[LogEntry](db, 0, "", "", 0,
 		// Where clause
-		sqlh.Where{Field: "user_id=", Value: 1},
+		sqlh.Eq("user_id", 1),
 		// Func to handle Errors during execution and scan records
 		func(e error) { log.Fatal("error:", e) },
 		// Context

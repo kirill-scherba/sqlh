@@ -100,7 +100,7 @@ func main() {
     fmt.Printf("Inserted Bob with ID=%d.\n", bobID)
 
     // Get user by name
-    retrievedUser, err := sqlh.Get[User](db, sqlh.Where{Field: "name=", Value: "Alice"})
+    retrievedUser, err := sqlh.Get[User](db, sqlh.Eq("name", "Alice"))
     if err != nil {
         if errors.Is(err, sql.ErrNoRows) {
             log.Println("User not found.")
@@ -116,7 +116,7 @@ func main() {
     retrievedUser.Email = "alice.new@example.com"
     updateAttr := sqlh.UpdateAttr[User]{
         Row:    *retrievedUser,
-        Wheres: []sqlh.Where{{Field: "id=", Value: retrievedUser.ID}},
+        Wheres: []sqlh.Where{sqlh.Eq("id", retrievedUser.ID)},
     }
     if err := sqlh.Update(db, updateAttr); err != nil {
         log.Fatalf("failed to update user: %v", err)
@@ -139,7 +139,7 @@ func main() {
     }
 
     // Delete user
-    if err := sqlh.Delete[User](db, sqlh.Where{Field: "id=", Value: bobID}); err != nil {
+    if err := sqlh.Delete[User](db, sqlh.Eq("id", bobID)); err != nil {
         log.Fatalf("failed to delete user: %v", err)
     }
     fmt.Println("Deleted Bob.")
@@ -159,7 +159,7 @@ if err != nil {
 
 // Use methods
 userTable.Insert(User{Name: "Charlie", Email: "charlie@example.com"})
-charlie, _ := userTable.Get(sqlh.Where{Field: "name=", Value: "Charlie"})
+charlie, _ := userTable.Get(sqlh.Eq("name", "Charlie"))
 fmt.Println(charlie.Name)
 for _, user := range userTable.List(0, "", "name ASC", 0) {
     fmt.Println(user.Name)
@@ -172,6 +172,38 @@ for _, user := range userTable.List(0, "", "name ASC", 0) {
 > backward compatibility. Resource cleanup is done by closing the original
 > `*sql.DB` handle (`db.Close()`).
 
+## Type-Safe WHERE Helpers
+
+Instead of writing raw SQL fragments in `Where.Field`, use helper constructors for common conditions. Values are always passed as bind parameters for safety.
+
+```go
+// Equality and comparisons
+sqlh.Eq("name", "Alice")        // name = ?
+sqlh.Ne("status", "deleted")    // status <> ?
+sqlh.Gt("age", 18)              // age > ?
+sqlh.Gte("age", 18)             // age >= ?
+sqlh.Lt("price", 100.0)         // price < ?
+sqlh.Lte("price", 100.0)        // price <= ?
+
+// Text and set operations
+sqlh.Like("name", "%Alice%")    // name LIKE ?
+sqlh.In("id", 1, 2, 3)         // id IN (?, ?, ?)
+sqlh.IsNull("deleted_at")        // deleted_at IS NULL
+sqlh.IsNotNull("created_at")     // created_at IS NOT NULL
+```
+
+**Before (raw Where):**
+```go
+user, err := sqlh.Get[User](db, sqlh.Where{Field: "name=", Value: "Alice"})
+```
+
+**After (type-safe helper):**
+```go
+user, err := sqlh.Get[User](db, sqlh.Eq("name", "Alice"))
+```
+
+Helpers are thin wrappers around `Where{Field, Value}`. The existing `Where{Field, Value}` syntax is still available as a low-level escape hatch for custom operators and edge cases.
+
 ## Query Attributes
 
 `List`, `ListRows`, and `ListRange` accept variadic query attributes for advanced queries:
@@ -182,8 +214,8 @@ users, nextOffset, err := sqlh.ListRows[User](db, 10, "", "name ASC", 5)
 
 // WHERE with OR
 users, _, err := sqlh.List[User](db, 0, "", "name ASC",
-    sqlh.Where{Field: "name=", Value: "Alice"},
-    sqlh.Where{Field: "name=", Value: "Bob"},
+    sqlh.Eq("name", "Alice"),
+    sqlh.Eq("name", "Bob"),
     sqlh.SetWheresJoinOr(),
 )
 
@@ -225,7 +257,7 @@ users, _, err := sqlh.List[User](db, 0, "", "name ASC", ctx)
 
 ```go
 err := sqlh.Set(db, User{Name: "Dave", Email: "dave@example.com"},
-    sqlh.Where{Field: "name=", Value: "Dave"})
+    sqlh.Eq("name", "Dave"))
 ```
 
 ## Custom Table Name
