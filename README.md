@@ -6,6 +6,13 @@
 
 `sqlh` is a lightweight helper package for Go that simplifies interactions with SQL databases. It leverages **Go generics (Go 1.25+)** to provide type-safe CRUD functions (`Insert`, `Get`, `List`, `Update`, `Delete`, `Set`) that work directly with your Go structs, automatically generating SQL queries from struct definitions using struct tags — reducing boilerplate code by 60-80%.
 
+## Demo
+
+![sqlh demo](docs/demo.gif)
+
+> **Zero boilerplate.** Define your struct with tags, and `sqlh` generates all SQL.  
+> Watch: struct → CREATE TABLE → Insert → Get → List → Update → Delete — all type-safe.
+
 ## Features
 
 - **Generic Type-Safe API:** Work with any struct type `T any` — no manual SQL writing, no type assertions.
