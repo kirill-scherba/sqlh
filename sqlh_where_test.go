@@ -85,7 +85,7 @@ func TestWhereHelpers_ProcessWhere(t *testing.T) {
 
 	t.Run("standard comparison generates single placeholder", func(t *testing.T) {
 		frag, args := processWhere(Where{Field: "id=", Value: 42})
-		require.Equal(t, "id=?", frag)
+		require.Equal(t, "id= ?", frag)
 		require.Equal(t, []any{42}, args)
 	})
 
@@ -115,7 +115,7 @@ func TestWhereHelpers_ProcessWhere(t *testing.T) {
 
 	t.Run("LIKE generates single placeholder", func(t *testing.T) {
 		frag, args := processWhere(Like("name", "%foo%"))
-		require.Equal(t, "name LIKE?", frag)
+		require.Equal(t, "name LIKE ?", frag)
 		require.Equal(t, []any{"%foo%"}, args)
 	})
 }
@@ -322,7 +322,7 @@ func TestWhereHelpers_InvalidField_EscapeHatch(t *testing.T) {
 	require.Equal(t, "1=1; DROP TABLE users; --=", w.Field)
 
 	frag, args := processWhere(w)
-	require.Equal(t, "1=1; DROP TABLE users; --=?", frag)
+	require.Equal(t, "1=1; DROP TABLE users; --= ?", frag)
 	require.Equal(t, []any{"foo"}, args)
 }
 

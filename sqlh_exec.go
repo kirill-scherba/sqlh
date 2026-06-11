@@ -149,7 +149,7 @@ func processWhere(w Where) (fragment string, args []any) {
 		return field + " (?)", []any{w.Value}
 	}
 
-	return field + "?", []any{w.Value}
+	return field + " ?", []any{w.Value}
 }
 
 // WheresJoinOr is a type for query.Args function to join wheres with OR
