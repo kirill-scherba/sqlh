@@ -49,7 +49,7 @@ func main() {
 	fmt.Println("✓ Inserted Charlie")
 
 	// ---- 3. Get by ID (returns *T, err) ----
-	userPtr, err := sqlh.Get[User](db, sqlh.Where{Field: "id=", Value: bobID})
+	userPtr, err := sqlh.Get[User](db, sqlh.Eq("id", bobID))
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Fatal("user not found")
@@ -60,7 +60,7 @@ func main() {
 		userPtr.ID, userPtr.Name, userPtr.Email, userPtr.Age)
 
 	// ---- 4. Get by name (unique field) ----
-	userPtr, err = sqlh.Get[User](db, sqlh.Where{Field: "name=", Value: "Alice"})
+	userPtr, err = sqlh.Get[User](db, sqlh.Eq("name", "Alice"))
 	if err != nil {
 		log.Fatalf("failed to get user: %v", err)
 	}
@@ -79,7 +79,7 @@ func main() {
 
 	// ---- 6. List with WHERE ----
 	adults, _, err := sqlh.List[User](db, 0, "", "name ASC",
-		sqlh.Where{Field: "age>=", Value: 30})
+		sqlh.Gte("age", 30))
 	if err != nil {
 		log.Fatalf("failed to list adults: %v", err)
 	}
@@ -98,7 +98,7 @@ func main() {
 	if err := sqlh.Update(db,
 		sqlh.UpdateAttr[User]{
 			Row:    User{Name: "Alice", Email: "alice.new@example.com", Age: 31},
-			Wheres: []sqlh.Where{{Field: "name=", Value: "Alice"}},
+			Wheres: []sqlh.Where{sqlh.Eq("name", "Alice")},
 		},
 	); err != nil {
 		log.Fatalf("failed to update: %v", err)
@@ -106,7 +106,7 @@ func main() {
 	fmt.Println("✓ Updated Alice's email and age")
 
 	// Verify update
-	userPtr, err = sqlh.Get[User](db, sqlh.Where{Field: "name=", Value: "Alice"})
+	userPtr, err = sqlh.Get[User](db, sqlh.Eq("name", "Alice"))
 	if err != nil {
 		fmt.Printf("  Failed to get updated Alice: %v\n", err)
 	} else {
@@ -114,13 +114,13 @@ func main() {
 	}
 
 	// ---- 9. Delete ----
-	if err := sqlh.Delete[User](db, sqlh.Where{Field: "id=", Value: bobID}); err != nil {
+	if err := sqlh.Delete[User](db, sqlh.Eq("id", bobID)); err != nil {
 		log.Fatalf("failed to delete: %v", err)
 	}
 	fmt.Println("✓ Deleted Bob")
 
 	// Verify deletion
-	_, err = sqlh.Get[User](db, sqlh.Where{Field: "id=", Value: bobID})
+	_, err = sqlh.Get[User](db, sqlh.Eq("id", bobID))
 	if err == sql.ErrNoRows {
 		fmt.Println("  Bob is gone (sql.ErrNoRows)")
 	}
@@ -129,7 +129,7 @@ func main() {
 	// Set Dave (new user — will insert)
 	err = sqlh.Set(db,
 		User{Name: "Dave", Email: "dave@example.com", Age: 28},
-		sqlh.Where{Field: "name=", Value: "Dave"})
+		sqlh.Eq("name", "Dave"))
 	if err != nil {
 		log.Fatalf("failed to set Dave: %v", err)
 	}
@@ -138,13 +138,13 @@ func main() {
 	// Set Dave again with different age (will update)
 	err = sqlh.Set(db,
 		User{Name: "Dave", Email: "dave@example.com", Age: 29},
-		sqlh.Where{Field: "name=", Value: "Dave"})
+		sqlh.Eq("name", "Dave"))
 	if err != nil {
 		log.Fatalf("failed to set Dave again: %v", err)
 	}
 	fmt.Println("✓ Set (updated) Dave's age")
 
-	userPtr, err = sqlh.Get[User](db, sqlh.Where{Field: "name=", Value: "Dave"})
+	userPtr, err = sqlh.Get[User](db, sqlh.Eq("name", "Dave"))
 	if err != nil {
 		fmt.Printf("  Failed to get Dave: %v\n", err)
 	} else {

@@ -88,7 +88,8 @@ The project is at version **v0.5.1** on `main`, with active development on
 
 1. **Native UPSERT**: Replace `Set` with `ON CONFLICT DO UPDATE`
 2. **Aggregate functions**: GROUP BY, HAVING, SUM, AVG, MIN, MAX
-3. **Advanced WHERE helpers**: Dedicated `IN` operator, explicit NULL clauses
+3. **Type-safe WHERE helpers**: Dedicated `IN` operator, explicit NULL clauses
+   — ✅ Complete (issue #14)
 
 ## Known Issues
 

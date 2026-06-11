@@ -250,11 +250,20 @@ func Update[T any](wheres ...string) (string, error) {
 		return "", ErrWhereClauseRequiredForUpdate
 	}
 
+	// Build WHERE clause, appending ? to bare field names for backward compat
+	var whereParts []string
+	for _, w := range wheres {
+		if !strings.Contains(w, "?") {
+			w += "?"
+		}
+		whereParts = append(whereParts, w)
+	}
+
 	// Return UPDATE statement
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s;",
 		Name[T](),
 		strings.Join(fields, "=?,")+"=?",
-		strings.Join(wheres, "? AND ")+"?",
+		strings.Join(whereParts, " AND "),
 	), nil
 }
 
@@ -435,19 +444,28 @@ func Delete[T any](wheres ...string) (string, error) {
 		return "", err
 	}
 
+	// Build WHERE clause, appending ? to bare field names for backward compat
+	var whereParts []string
+	for _, w := range wheres {
+		if !strings.Contains(w, "?") {
+			w += "?"
+		}
+		whereParts = append(whereParts, w)
+	}
+
 	// Join the where statements with " and "
 	var where string
-	if len(wheres) > 0 {
-		where = strings.Join(wheres, "? AND ")
+	if len(whereParts) > 0 {
+		where = strings.Join(whereParts, " AND ")
 	}
 
 	// Add the where statement to the SQL query
 	if len(where) > 0 {
-		where = fmt.Sprintf(" where %s?", where)
+		where = fmt.Sprintf(" WHERE %s", where)
 	}
 
 	// Return the complete DELETE statement
-	return fmt.Sprintf("DELETE from %s%s;", Name[T](), where), nil
+	return fmt.Sprintf("DELETE FROM %s%s;", Name[T](), where), nil
 }
 
 // Args returns the arguments array for the given struct type.

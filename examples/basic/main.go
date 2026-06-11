@@ -49,7 +49,7 @@ func main() {
 	fmt.Println("Inserted Bob")
 
 	// Get user by name
-	user, err := sqlh.Get[User](db, sqlh.Where{Field: "name=", Value: "Alice"})
+	user, err := sqlh.Get[User](db, sqlh.Eq("name", "Alice"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -69,14 +69,14 @@ func main() {
 	// Update user
 	if err := sqlh.Update(db, sqlh.UpdateAttr[User]{
 		Row:    User{ID: user.ID, Name: "Alice", Email: "alice.new@example.com"},
-		Wheres: []sqlh.Where{{Field: "id=", Value: user.ID}},
+		Wheres: []sqlh.Where{sqlh.Eq("id", user.ID)},
 	}); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("Updated Alice's email")
 
 	// Verify update
-	updated, _ := sqlh.Get[User](db, sqlh.Where{Field: "id=", Value: user.ID})
+	updated, _ := sqlh.Get[User](db, sqlh.Eq("id", user.ID))
 	fmt.Printf("Updated: %s <%s>\n", updated.Name, updated.Email)
 
 	// Count users
@@ -87,7 +87,7 @@ func main() {
 	fmt.Printf("Total users: %d\n", count)
 
 	// Delete user
-	if err := sqlh.Delete[User](db, sqlh.Where{Field: "name=", Value: "Bob"}); err != nil {
+	if err := sqlh.Delete[User](db, sqlh.Eq("name", "Bob")); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("Deleted Bob")

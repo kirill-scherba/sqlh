@@ -12,8 +12,9 @@ This document outlines the planned features and improvements for the `sqlh` pack
   - **`DISTINCT` Support:** `SetDistinct()` option for `SELECT DISTINCT`.
 - **Advanced `WHERE` Conditions:**
   - **`OR` Operator:** `SetWheresJoinOr()` combines conditions with `OR`.
-  - **`IN` Operator:** `Where{Field: "id IN", Value: ...}` supports list parameters.
-  - **`LIKE`, `IS NULL` / `IS NOT NULL`:** Supported through `Where{Field: "name LIKE", Value: "%foo%"}`.
+  - **`IN` Operator:** `sqlh.In("id", 1, 2, 3)` expands to `id IN (?, ?, ?)`.
+  - **`LIKE`, `IS NULL` / `IS NOT NULL`:** Supported through `sqlh.Like("name", "%foo%")`, `sqlh.IsNull("deleted_at")`, `sqlh.IsNotNull("created_at")`.
+  - **Type-safe Helpers:** `Eq`, `Ne`, `Gt`, `Gte`, `Lt`, `Lte` provide compile-time readability for common comparisons.
 - **`context.Context` Propagation:** All query functions accept `context.Context` for timeouts and cancellations.
 
 ### Advanced Features & Data Integrity

@@ -70,6 +70,88 @@ type Where struct {
 	Value any
 }
 
+// Eq returns a Where clause for equality: field = value.
+func Eq(field string, value any) Where {
+	return Where{Field: field + "=", Value: value}
+}
+
+// Ne returns a Where clause for not-equal: field <> value.
+func Ne(field string, value any) Where {
+	return Where{Field: field + "<>", Value: value}
+}
+
+// Gt returns a Where clause for greater-than: field > value.
+func Gt(field string, value any) Where {
+	return Where{Field: field + ">", Value: value}
+}
+
+// Gte returns a Where clause for greater-than-or-equal: field >= value.
+func Gte(field string, value any) Where {
+	return Where{Field: field + ">=", Value: value}
+}
+
+// Lt returns a Where clause for less-than: field < value.
+func Lt(field string, value any) Where {
+	return Where{Field: field + "<", Value: value}
+}
+
+// Lte returns a Where clause for less-than-or-equal: field <= value.
+func Lte(field string, value any) Where {
+	return Where{Field: field + "<=", Value: value}
+}
+
+// Like returns a Where clause for LIKE pattern matching.
+func Like(field string, value any) Where {
+	return Where{Field: field + " LIKE", Value: value}
+}
+
+// In returns a Where clause for IN operator with variadic values.
+// The values are expanded into individual bind parameters at query time.
+// Callers must ensure the slice is non-empty; an empty slice produces
+// "field IN ()" which is a SQL syntax error.
+func In(field string, values ...any) Where {
+	return Where{Field: field + " IN", Value: values}
+}
+
+// IsNull returns a Where clause for IS NULL.
+func IsNull(field string) Where {
+	return Where{Field: field + " IS NULL", Value: nil}
+}
+
+// IsNotNull returns a Where clause for IS NOT NULL.
+func IsNotNull(field string) Where {
+	return Where{Field: field + " IS NOT NULL", Value: nil}
+}
+
+// processWhere converts a Where struct into a SQL fragment string and
+// corresponding bind arguments. It handles IN expansion and NULL predicates.
+func processWhere(w Where) (fragment string, args []any) {
+	if w.Value == nil {
+		return w.Field, nil
+	}
+
+	// Detect IN operator
+	field := strings.TrimSpace(w.Field)
+	if strings.HasSuffix(field, " IN") {
+		rv := reflect.ValueOf(w.Value)
+		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+			if rv.Len() == 0 {
+				return field + " ()", nil
+			}
+			places := make([]string, rv.Len())
+			for i := range rv.Len() {
+				places[i] = "?"
+				args = append(args, rv.Index(i).Interface())
+			}
+			return field + " (" + strings.Join(places, ", ") + ")", args
+		}
+		// Single value: treat as single-element IN
+		return field + " (?)", []any{w.Value}
+	}
+
+	return field + " ?", []any{w.Value}
+}
+
 // WheresJoinOr is a type for query.Args function to join wheres with OR
 type WheresJoinOr bool
 
@@ -315,13 +397,16 @@ func Update[T any](db *sql.DB, attrs ...UpdateAttr[T]) (err error) {
 func updateOne[T any](tx *sql.Tx, dialect string, attr UpdateAttr[T]) (err error) {
 
 	// Create where clause
-	var wheres []string
+	var whereFragments []string
+	var whereArgs []any
 	for _, where := range attr.Wheres {
-		wheres = append(wheres, where.Field)
+		frag, a := processWhere(where)
+		whereFragments = append(whereFragments, frag)
+		whereArgs = append(whereArgs, a...)
 	}
 
 	// Create update statement
-	updateStmt, err := query.Update[T](wheres...)
+	updateStmt, err := query.Update[T](whereFragments...)
 	if err != nil {
 		return
 	}
@@ -340,9 +425,7 @@ func updateOne[T any](tx *sql.Tx, dialect string, attr UpdateAttr[T]) (err error
 	}
 
 	// Add where conditions to args array
-	for _, where := range attr.Wheres {
-		args = append(args, where.Value)
-	}
+	args = append(args, whereArgs...)
 
 	// Execute update statement
 	_, err = execStmt(stmt, args...)
@@ -530,14 +613,15 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 
 	case 1:
 		// One row found, update row within the transaction
-		var whereFields []string
-		var whereValues []any
-		for _, where := range wheres {
-			whereFields = append(whereFields, where.Field)
-			whereValues = append(whereValues, where.Value)
+		var whereFragments []string
+		var whereArgs []any
+		for _, w := range wheres {
+			frag, a := processWhere(w)
+			whereFragments = append(whereFragments, frag)
+			whereArgs = append(whereArgs, a...)
 		}
 
-		updateStmt, errUpdate := query.Update[T](whereFields...)
+		updateStmt, errUpdate := query.Update[T](whereFragments...)
 		if errUpdate != nil {
 			err = errUpdate
 			return // Rollback
@@ -548,7 +632,7 @@ func Set[T any](db *sql.DB, row T, wheres ...Where) (err error) {
 			err = errArgs
 			return // Rollback
 		}
-		args = append(args, whereValues...)
+		args = append(args, whereArgs...)
 
 		_, err = execTx(tx, updateStmt, dialect, args...)
 		if err != nil {
@@ -635,8 +719,9 @@ func Delete[T any](db *sql.DB, wheres ...Where) (err error) {
 	var whereArgs []any
 	var whereFields []string
 	for _, w := range wheres {
-		whereArgs = append(whereArgs, w.Value)
-		whereFields = append(whereFields, w.Field)
+		frag, args := processWhere(w)
+		whereArgs = append(whereArgs, args...)
+		whereFields = append(whereFields, frag)
 	}
 
 	// Create delete statement
@@ -686,8 +771,9 @@ func Count[T any](db querier, wheres ...Where) (count int, err error) {
 
 	// Construct where clauses and corresponding arguments
 	for _, w := range wheres {
-		attr.Wheres = append(attr.Wheres, w.Field+"?")
-		selectArgs = append(selectArgs, w.Value)
+		frag, args := processWhere(w)
+		attr.Wheres = append(attr.Wheres, frag)
+		selectArgs = append(selectArgs, args...)
 	}
 
 	// Create SQL COUNT statement
@@ -1098,12 +1184,9 @@ func listStatement[T any](previous int, groupBy, orderBy string, numRows int,
 
 	// Where clauses
 	for _, w := range wheres {
-		if w.Value == nil {
-			attr.Wheres = append(attr.Wheres, w.Field)
-			continue
-		}
-		attr.Wheres = append(attr.Wheres, w.Field+"?")
-		selectArgs = append(selectArgs, w.Value)
+		frag, args := processWhere(w)
+		attr.Wheres = append(attr.Wheres, frag)
+		selectArgs = append(selectArgs, args...)
 	}
 
 	// Group by
