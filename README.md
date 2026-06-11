@@ -153,6 +153,24 @@ func main() {
 }
 ```
 
+## Why sqlh?
+
+How much boilerplate does sqlh eliminate? The [comparison example](examples/comparison/main.go)
+implements the same CRUD operations with three approaches.
+
+| Approach           | Lines of code | Boilerplate reduction |
+|--------------------|---------------|-----------------------|
+| Raw `database/sql` | ~115          | baseline              |
+| `sqlx`             | ~80           | ~30%                  |
+| **`sqlh`**         | **~50**       | **~57%**              |
+
+sqlh eliminates:
+- **Manual SQL writing** — struct tags (`db`, `db_key`, `db_type`) generate DDL and DML
+- **`rows.Scan()`** — `Get[T]` and `List[T]` return fully-populated typed structs
+- **Transaction management** — all writes (`Insert`, `Update`, `Delete`, `Set`) are auto-transacted
+- **Error-prone column ordering** — reflection maps columns to struct fields automatically
+- **Type assertions** — Go generics give compile-time safety, no `interface{}` or cast chains
+
 ## Table Wrapper API
 
 For convenience, you can use the method-based `Table[T]` API:
