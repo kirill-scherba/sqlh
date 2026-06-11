@@ -112,6 +112,7 @@
 - **examples/context/**: Context cancellation with `ListRange` — ✅ created
 - **examples/crud/**: Full CRUD workflow example — ✅ created
 - **examples/comparison/**: Side-by-side CRUD comparison of raw `database/sql`, `sqlx`, and `sqlh` — ✅ created (issue #26)
+- **bench/**: Comparative performance benchmarks (24 functions: raw sql, sqlx, GORM, sqlh) — ✅ created (issue #28)
 - **docs/demo.gif**: Animated terminal recording for README — ✅ created
 
 ## What's Planned
