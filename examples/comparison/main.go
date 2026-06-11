@@ -36,7 +36,7 @@ func main() {
 
 // ════════════════════════════════════════════════════════════════
 //  Approach 1: Raw database/sql
-//  Total: ~110 lines to implement the same operations
+//  Total: ~115 lines to implement the same operations
 // ════════════════════════════════════════════════════════════════
 
 type UserRaw struct {
@@ -94,9 +94,16 @@ func runRawSQL(db *sql.DB) {
 	fmt.Printf("  ✓ LIST → %d users\n", len(usersRaw))
 
 	// 5. UPDATE — raw SQL with placeholders
-	_, err = db.Exec("UPDATE user_raw SET email = ? WHERE id = ?", "alice.new@example.com", 1)
+	_, err = db.Exec("UPDATE user_raw SET email = ?, age = ? WHERE id = ?", "alice.new@example.com", 31, 1)
 	checkErr("raw update", err)
-	fmt.Println("  ✓ UPDATE Alice's email")
+	fmt.Println("  ✓ UPDATE Alice's email and age")
+
+	// Verify update
+	var updatedRaw UserRaw
+	err = db.QueryRow("SELECT id, name, email, age FROM user_raw WHERE id = ?", 1).
+		Scan(&updatedRaw.ID, &updatedRaw.Name, &updatedRaw.Email, &updatedRaw.Age)
+	checkErr("raw verify update", err)
+	fmt.Printf("  ✓ Verified: Email=%s, Age=%d\n", updatedRaw.Email, updatedRaw.Age)
 
 	// 6. DELETE — raw SQL
 	_, err = db.Exec("DELETE FROM user_raw WHERE id = ?", bobID)
@@ -112,7 +119,7 @@ func runRawSQL(db *sql.DB) {
 
 // ════════════════════════════════════════════════════════════════
 //  Approach 2: sqlx
-//  Total: ~75 lines — ~32% less boilerplate than raw sql
+//  Total: ~80 lines — ~30% less boilerplate than raw sql
 // ════════════════════════════════════════════════════════════════
 
 type UserSqlx struct {
@@ -163,9 +170,15 @@ func runSqlx(db *sql.DB) {
 	fmt.Printf("  ✓ LIST → %d users\n", len(usersSqlx))
 
 	// 5. UPDATE — NamedExec with struct
-	_, err = dbx.NamedExec("UPDATE user_sqlx SET email = :email WHERE id = :id", &UserSqlx{ID: 1, Email: "alice.new@example.com"})
+	_, err = dbx.NamedExec("UPDATE user_sqlx SET email = :email, age = :age WHERE id = :id", &UserSqlx{ID: 1, Email: "alice.new@example.com", Age: 31})
 	checkErr("sqlx update", err)
-	fmt.Println("  ✓ UPDATE Alice's email")
+	fmt.Println("  ✓ UPDATE Alice's email and age")
+
+	// Verify update
+	var updatedSqlx UserSqlx
+	err = dbx.Get(&updatedSqlx, "SELECT id, name, email, age FROM user_sqlx WHERE id = ?", 1)
+	checkErr("sqlx verify update", err)
+	fmt.Printf("  ✓ Verified: Email=%s, Age=%d\n", updatedSqlx.Email, updatedSqlx.Age)
 
 	// 6. DELETE — plain Exec
 	_, err = dbx.Exec("DELETE FROM user_sqlx WHERE id = ?", bobID)
@@ -181,7 +194,7 @@ func runSqlx(db *sql.DB) {
 
 // ════════════════════════════════════════════════════════════════
 //  Approach 3: sqlh
-//  Total: ~45 lines — ~59% less boilerplate than raw sql
+//  Total: ~50 lines — ~57% less boilerplate than raw sql
 // ════════════════════════════════════════════════════════════════
 
 type UserSqlh struct {
@@ -221,14 +234,19 @@ func runSqlh(db *sql.DB) {
 	checkErr("sqlh list", err)
 	fmt.Printf("  ✓ LIST → %d users\n", len(usersSqlh))
 
-	// 5. UPDATE — pass new values + where clause
+	// 5. UPDATE — pass full struct to avoid zeroing other columns
 	if err := sqlh.Update(db, sqlh.UpdateAttr[UserSqlh]{
-		Row:    UserSqlh{Email: "alice.new@example.com"},
+		Row:    UserSqlh{Name: "Alice", Email: "alice.new@example.com", Age: 31},
 		Wheres: []sqlh.Where{sqlh.Eq("id", 1)},
 	}); err != nil {
 		log.Fatalf("sqlh update: %v", err)
 	}
-	fmt.Println("  ✓ UPDATE Alice's email")
+	fmt.Println("  ✓ UPDATE Alice's email and age")
+
+	// Verify update
+	updatedSqlh, err := sqlh.Get[UserSqlh](db, sqlh.Eq("id", 1))
+	checkErr("sqlh verify update", err)
+	fmt.Printf("  ✓ Verified: Email=%s, Age=%d\n", updatedSqlh.Email, updatedSqlh.Age)
 
 	// 6. DELETE — one function call with where clause
 	if err := sqlh.Delete[UserSqlh](db, sqlh.Eq("id", bobID)); err != nil {
@@ -256,8 +274,8 @@ func printSummary() {
 	fmt.Println("║  DELETE        │  Exec(?)  │  Exec   │ Delete[T]     ║")
 	fmt.Println("║  COUNT         │Query+Scan │ Get(&int)│ Count[T]()   ║")
 	fmt.Println("╠════════════════════════════════════════════════════════╣")
-	fmt.Println("║  Lines of code │  ~110     │  ~75    │  ~45          ║")
-	fmt.Println("║  Reduction     │  baseline │  -32%   │  -59%         ║")
+	fmt.Println("║  Lines of code │  ~115     │  ~80    │  ~50          ║")
+	fmt.Println("║  Reduction     │  baseline │  -30%   │  -57%         ║")
 	fmt.Println("╚════════════════════════════════════════════════════════╝")
 	fmt.Println("\nKey differences:")
 	fmt.Println("  • sqlh generates CREATE TABLE, INSERT, SELECT, UPDATE, DELETE")

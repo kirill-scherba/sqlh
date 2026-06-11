@@ -160,9 +160,9 @@ implements the same CRUD operations with three approaches.
 
 | Approach           | Lines of code | Boilerplate reduction |
 |--------------------|---------------|-----------------------|
-| Raw `database/sql` | ~110          | baseline              |
-| `sqlx`             | ~75           | ~32%                  |
-| **`sqlh`**         | **~45**       | **~59%**              |
+| Raw `database/sql` | ~115          | baseline              |
+| `sqlx`             | ~80           | ~30%                  |
+| **`sqlh`**         | **~50**       | **~57%**              |
 
 sqlh eliminates:
 - **Manual SQL writing** — struct tags (`db`, `db_key`, `db_type`) generate DDL and DML
