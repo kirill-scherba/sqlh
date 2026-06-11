@@ -26,6 +26,8 @@ It's intended to be a human-readable history of changes.
   (`Insert`, `InsertId`, `Get`, `List`, `ListRows`, `ListRange`, `Update`,
   `Delete`, `Set`, `Count`), `time.Time` fields, `SERIAL` auto-increment,
   and JOIN with composite structs. Opt-in via `SQLH_TEST_POSTGRES=1`. (#2)
+- **pkg.go.dev badge**: Replaced deprecated `godoc.org` badge in README with
+  official `pkg.go.dev` Go Reference badge. (#27)
 - **PostgreSQL DDL generation**: `query.TablePG[T]()` generates
   PostgreSQL-compatible CREATE TABLE statements (`SERIAL`/`BIGSERIAL`,
   `bytea`, `boolean`, `double precision`). (#2)
