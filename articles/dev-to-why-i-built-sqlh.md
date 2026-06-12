@@ -43,7 +43,7 @@ rows, err := db.Query("SELECT id, name, email, age FROM user ORDER BY name ASC")
 var users []User
 for rows.Next() {
     var u User
-    if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Aage); err != nil {
+    if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Age); err != nil {
         log.Fatal(err)
     }
     users = append(users, u)
@@ -179,9 +179,7 @@ package main
 
 import (
     "database/sql"
-    "errors"
     "fmt"
-    "log"
 
     "github.com/kirill-scherba/sqlh"
     _ "github.com/mattn/go-sqlite3"
