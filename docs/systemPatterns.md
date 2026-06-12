@@ -239,7 +239,7 @@ err := migrate.Apply(db, plan, migrate.Options{DryRun: false})
 - **querier interface** — unifies `*sql.DB` and `*sql.Tx` so `Diff` introspection works inside the Apply transaction
 - **Safety by default** — `AutoAdd()` only generates `ADD COLUMN`; destructive changes require `migrate.Raw()`
 - **DryRun mode** — prints SQL without executing; Diff migrations show a placeholder since they need live schema
-- **Transaction wrapping** — entire Apply run is a single DB transaction; rollback on any error
+- **Transaction wrapping** — pending migration execution + `_migrations` recording are transactional; `_migrations` table creation and version lookup happen outside the transaction for DDL portability. Rollback on any error.
 - **Zero new dependencies** — reuses existing `query` package for DDL generation
 
 **Data flow for Diff:**

@@ -7,6 +7,8 @@ package migrate
 import (
 	"database/sql"
 	"errors"
+	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -44,6 +46,7 @@ type UserV3 struct {
 	Email     string    `db:"email" db_key:"unique"`
 	Age       int       `db:"age"`
 	CreatedAt time.Time `db:"created_at"`
+	_         string    `db:"-" db_key:"KEY idx_name (name)"`
 }
 
 // --- Tests ---
@@ -168,52 +171,75 @@ func TestApplyIdempotent(t *testing.T) {
 
 func TestApplyDryRun(t *testing.T) {
 	db := testDB(t)
+	// Pre-create the V1 table so Diff has a live schema to compare against.
+	_, err := db.Exec("CREATE TABLE userv2 (id integer primary key autoincrement, name text)")
+	require.NoError(t, err)
+
 	plan := Plan{
-		FromStruct[UserV1]("", V(1)),
+		Diff[UserV2]("userv2", V(2), AutoAdd()),
 	}
 
-	err := Apply(db, plan, Options{DryRun: true})
+	// Capture stdout.
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err = Apply(db, plan, Options{DryRun: true})
+	_ = w.Close()
+	os.Stdout = old
 	require.NoError(t, err)
 
-	// Verify no tables created.
-	_, err = db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name='userv1'")
+	out, _ := io.ReadAll(r)
+	output := string(out)
+	assert.Contains(t, output, "ALTER TABLE userv2 ADD COLUMN email text")
+	assert.Contains(t, output, "ALTER TABLE userv2 ADD COLUMN age integer")
+	assert.Contains(t, output, "Dry run complete")
+
+	// Verify schema was NOT changed.
+	cols, err := TableColumns(db, "userv2", SQLite)
 	require.NoError(t, err)
-	// If userv1 doesn't exist, querying it would fail.
-	_, err = db.Query("SELECT * FROM userv1")
-	require.Error(t, err)
+	require.Len(t, cols, 2) // id, name — unchanged
 }
 
 func TestApplyBackupHook(t *testing.T) {
 	db := testDB(t)
-	called := false
+	callCount := 0
 
 	plan := Plan{
 		FromStruct[UserV1]("", V(1)),
+		Raw("noop", V(2), "SELECT 1"),
 	}
 
 	err := Apply(db, plan, Options{
 		Backup: func(db *sql.DB) error {
-			called = true
+			callCount++
 			return nil
 		},
 	})
 	require.NoError(t, err)
-	assert.True(t, called)
+	assert.Equal(t, 2, callCount)
 }
 
 func TestApplyBackupHookError(t *testing.T) {
 	db := testDB(t)
 	plan := Plan{
 		FromStruct[UserV1]("", V(1)),
+		Raw("noop", V(2), "SELECT 1"),
 	}
 
+	callCount := 0
 	err := Apply(db, plan, Options{
 		Backup: func(db *sql.DB) error {
-			return errors.New("backup failed")
+			callCount++
+			if callCount == 2 {
+				return errors.New("backup failed")
+			}
+			return nil
 		},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "backup hook failed")
+	assert.Contains(t, err.Error(), "backup hook")
+	assert.Equal(t, 2, callCount)
 }
 
 func TestApplyMultipleMigrations(t *testing.T) {
@@ -344,6 +370,20 @@ func TestApplyPlanValidation(t *testing.T) {
 	err := Apply(db, plan, Options{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ascending")
+}
+
+func TestDiffAutoAddIndexes(t *testing.T) {
+	db := testDB(t)
+
+	// Create V2 table manually.
+	_, err := db.Exec("CREATE TABLE userv3 (id integer primary key autoincrement, name text, email text, age integer, created_at timestamp)")
+	require.NoError(t, err)
+
+	// Run Diff V3 — should add the index from _ sentinel field.
+	m := Diff[UserV3]("userv3", V(3), AutoAdd())
+	sql, err := m.(*diffMigration[UserV3]).SQLWithDB(db, SQLite)
+	require.NoError(t, err)
+	assert.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_name ON userv3 (name)")
 }
 
 func TestDiffTableNotFound(t *testing.T) {

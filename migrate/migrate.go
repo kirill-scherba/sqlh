@@ -10,14 +10,19 @@
 //   - Diff[T] — auto-detect missing columns and ADD COLUMN.
 //   - Raw — explicit SQL for destructive or complex changes.
 //
-// Apply runs pending migrations in version order. When DryRun is true, it
-// prints SQL to stdout without executing. An optional Backup hook allows
-// pre-migration backups.
+// Apply runs pending migrations in version order.
 //
-// The entire Apply run is wrapped in a single database transaction. If any
-// migration step fails, the transaction is rolled back. For SQLite this is
-// fully transactional; for MySQL and PostgreSQL some DDL statements may not
-// be transactional — use the Backup hook in those cases.
+// When DryRun is true, it prints SQL to stdout without executing.
+//
+// When opts.Backup is set, it is called once before each pending
+// migration step. If Backup returns an error, Apply aborts before
+// executing that step.
+//
+// The migration execution and _migrations recording are wrapped in
+// a single database transaction. If any migration step fails, the
+// transaction is rolled back. For SQLite this is fully transactional;
+// for MySQL and PostgreSQL some DDL statements may not be transactional
+// — use the Backup hook in those cases.
 //
 // This package is experimental — the API may change.
 package migrate

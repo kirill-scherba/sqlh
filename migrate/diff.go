@@ -51,6 +51,12 @@ type diffColumn struct {
 	NotNull bool
 }
 
+// indexInfo describes an index declaration extracted from a sentinel _ field.
+type indexInfo struct {
+	Name    string // index name
+	Columns string // e.g. "(name)" or "(name, email)"
+}
+
 // diffMigration compares struct fields against the live schema.
 type diffMigration[T any] struct {
 	name      string
@@ -101,11 +107,12 @@ func (d *diffMigration[T]) sqlAutoAdd(db querier, dialect Dialect) (string, erro
 		table = query.Name[T]()
 	}
 
-	// Extract columns from struct tags.
+	// Extract columns and indexes from struct tags.
 	structCols, err := structColumns(t, dialect)
 	if err != nil {
 		return "", err
 	}
+	structIdxs := structIndexes(t, table)
 
 	// Retrieve live columns.
 	liveCols, err := TableColumns(db, table, dialect)
@@ -131,6 +138,12 @@ func (d *diffMigration[T]) sqlAutoAdd(db querier, dialect Dialect) (string, erro
 		}
 		stmt += ";"
 		stmts = append(stmts, stmt)
+	}
+
+	// Generate CREATE INDEX IF NOT EXISTS for each index declaration.
+	for _, idx := range structIdxs {
+		stmts = append(stmts, fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s %s;",
+			idx.Name, table, idx.Columns))
 	}
 
 	if len(stmts) == 0 {
@@ -177,6 +190,60 @@ func structColumns(t reflect.Type, dialect Dialect) ([]diffColumn, error) {
 		})
 	}
 	return cols, nil
+}
+
+// structIndexes extracts CREATE INDEX IF NOT EXISTS declarations from sentinel
+// _ fields that carry a db_key tag of the form "KEY <name> (<cols>)".
+func structIndexes(t reflect.Type, tableName string) []indexInfo {
+	var idxs []indexInfo
+	for i := range t.NumField() {
+		field := t.Field(i)
+		if field.Name != "_" {
+			continue
+		}
+		dbKey := field.Tag.Get("db_key")
+		if dbKey == "" {
+			continue
+		}
+		// Match "KEY idx_name (col1, col2)" or "KEY (col1, col2)".
+		if strings.HasPrefix(dbKey, "KEY ") {
+			rest := strings.TrimPrefix(dbKey, "KEY ")
+			name, cols := parseKeySpec(rest)
+			if name == "" {
+				name = fmt.Sprintf("idx_%s_%d", tableName, hashString(cols))
+			}
+			idxs = append(idxs, indexInfo{Name: name, Columns: cols})
+		}
+		// Also handle "UNIQUE KEY ..."
+		if strings.HasPrefix(dbKey, "UNIQUE KEY ") {
+			rest := strings.TrimPrefix(dbKey, "UNIQUE KEY ")
+			name, cols := parseKeySpec(rest)
+			if name == "" {
+				name = fmt.Sprintf("unique_idx_%s_%d", tableName, hashString(cols))
+			}
+			idxs = append(idxs, indexInfo{Name: name, Columns: cols})
+		}
+	}
+	return idxs
+}
+
+// parseKeySpec splits "idx_name (col1, col2)" into (name, "(col1, col2)").
+// If there is no name, returns ("", "(col1, col2)").
+func parseKeySpec(s string) (name, cols string) {
+	s = strings.TrimSpace(s)
+	if idx := strings.IndexByte(s, '('); idx > 0 {
+		return strings.TrimSpace(s[:idx]), s[idx:]
+	}
+	return "", s
+}
+
+// hashString is a simple non-cryptographic hash for consistent naming.
+func hashString(s string) uint32 {
+	var h uint32
+	for i := 0; i < len(s); i++ {
+		h = h*31 + uint32(s[i])
+	}
+	return h
 }
 
 // goTypeToSQL maps a Go struct field to its SQL type, respecting db_type tag.

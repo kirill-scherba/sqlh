@@ -49,14 +49,7 @@ func Apply(db *sql.DB, plan Plan, opts Options) error {
 		return applyDryRun(db, plan, opts, dialect)
 	}
 
-	// Backup hook.
-	if opts.Backup != nil {
-		if err := opts.Backup(db); err != nil {
-			return fmt.Errorf("backup hook failed: %w", err)
-		}
-	}
-
-	// Ensure _migrations table exists.
+	// Ensure _migrations table exists (outside transaction for portability).
 	if err := ensureMigrationsTable(db, dialect); err != nil {
 		return fmt.Errorf("create _migrations table: %w", err)
 	}
@@ -82,6 +75,13 @@ func Apply(db *sql.DB, plan Plan, opts Options) error {
 
 	// Execute each pending migration.
 	for _, m := range pending {
+		// Backup hook called before each migration step.
+		if opts.Backup != nil {
+			if err := opts.Backup(db); err != nil {
+				return fmt.Errorf("backup hook before v%d: %w", m.Version(), err)
+			}
+		}
+
 		sql, err := migrationSQL(m, tx, dialect)
 		if err != nil {
 			return fmt.Errorf("migration v%d %q: generate SQL: %w", m.Version(), m.Name(), err)
@@ -89,7 +89,7 @@ func Apply(db *sql.DB, plan Plan, opts Options) error {
 
 		// Skip empty SQL (e.g. Diff with no changes).
 		if sql == "" {
-			if err := recordMigration(tx, m); err != nil {
+			if err := recordMigration(tx, m, dialect); err != nil {
 				return fmt.Errorf("migration v%d %q: record: %w", m.Version(), m.Name(), err)
 			}
 			continue
@@ -101,7 +101,7 @@ func Apply(db *sql.DB, plan Plan, opts Options) error {
 		}
 
 		// Record in _migrations.
-		if err := recordMigration(tx, m); err != nil {
+		if err := recordMigration(tx, m, dialect); err != nil {
 			return fmt.Errorf("migration v%d %q: record: %w", m.Version(), m.Name(), err)
 		}
 	}
@@ -118,17 +118,9 @@ func Apply(db *sql.DB, plan Plan, opts Options) error {
 func applyDryRun(db *sql.DB, plan Plan, opts Options, dialect Dialect) error {
 	fmt.Println("--- Dry run ---")
 
-	// For DryRun we can't introspect non-existent tables. We show all
-	// non-Diff migrations and skip Diff ones with a note.
 	for _, m := range plan {
 		sql, err := migrationSQL(m, db, dialect)
 		if err != nil {
-			// Diff migrations fail in DryRun because tables don't exist yet.
-			// Show a placeholder instead.
-			if _, ok := m.(migrationWithDB); ok {
-				fmt.Printf("[V%d] %s\n(diff — requires live database)\n", m.Version(), m.Name())
-				continue
-			}
 			return fmt.Errorf("migration v%d %q: %w", m.Version(), m.Name(), err)
 		}
 		if sql != "" {
@@ -213,9 +205,13 @@ func filterPending(plan Plan, applied map[Version]struct{}) Plan {
 }
 
 // recordMigration inserts a row into _migrations.
-func recordMigration(tx querier, m Migration) error {
+func recordMigration(tx querier, m Migration, dialect Dialect) error {
+	sql := "INSERT INTO _migrations (version, name, applied_at) VALUES (?, ?, ?)"
+	if dialect == PostgreSQL {
+		sql = "INSERT INTO _migrations (version, name, applied_at) VALUES ($1, $2, $3)"
+	}
 	_, err := tx.Exec(
-		"INSERT INTO _migrations (version, name, applied_at) VALUES (?, ?, ?)",
+		sql,
 		int(m.Version()), m.Name(), time.Now().UTC(),
 	)
 	return err
