@@ -7,11 +7,9 @@ It's intended to be a human-readable history of changes.
 
 ## [Unreleased]
 
-## [v0.8.0] - 2026-06-12
-
 ### Added
 
-- **Type-safe WHERE helper API**: `query.Eq`, `query.Ne`, `query.Gt`, `query.Gte`, `query.Lt`, `query.Lte`, `query.Like`, `query.In`, `query.IsNull`, `query.IsNotNull` — fluent, chainable helpers for building WHERE conditions without raw SQL strings. (#14)
+- **Type-safe WHERE helper API**: `sqlh.Eq`, `sqlh.Ne`, `sqlh.Gt`, `sqlh.Gte`, `sqlh.Lt`, `sqlh.Lte`, `sqlh.Like`, `sqlh.In`, `sqlh.IsNull`, `sqlh.IsNotNull` — fluent, chainable helpers for building WHERE conditions without raw SQL strings. (#14)
 - **Code comparison examples**: Side-by-side CRUD comparison of raw `database/sql`, `sqlx`, and `sqlh` in `examples/comparison/`, demonstrating the 60-80 % boilerplate reduction. (#26)
 - **Performance benchmarks**: 24 benchmark functions in `bench/` comparing `sqlh` vs raw `database/sql`, `sqlx`, and GORM across Insert, Get, List, Update, and Delete operations. (#28)
 - **Animated GIF demo**: `docs/demo.gif` showing zero-boilerplate CRUD workflow from struct definition to database operations. (#25)
@@ -26,8 +24,6 @@ It's intended to be a human-readable history of changes.
 
 - **README benchmark tables**: Corrected units (ops/sec, allocs/op), values, and formatting for accuracy. (#28)
 - **Comparison UPDATE semantics**: Made the `UPDATE` operation in `examples/comparison/` semantically equivalent across all three approaches for fair benchmarking. (#26)
-
-## [v0.7.1] - 2026-06-11
 
 ### Added
 
@@ -175,8 +171,7 @@ Patch release — no functional changes.
 
 - Corrected the return signature and logic of `Get` to consistently return `*T` or `nil` on error/not found.
 
-[Unreleased]: https://github.com/kirill-scherba/sqlh/compare/v0.8.0...HEAD
-[v0.8.0]: https://github.com/kirill-scherba/sqlh/compare/v0.7.1...v0.8.0
+[Unreleased]: https://github.com/kirill-scherba/sqlh/compare/v0.7.1...HEAD
 [v0.7.1]: https://github.com/kirill-scherba/sqlh/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/kirill-scherba/sqlh/compare/v0.6.1...v0.7.0
 [v0.6.1]: https://github.com/kirill-scherba/sqlh/compare/v0.6.0...v0.6.1

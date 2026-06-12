@@ -2,14 +2,15 @@
 
 ## Current State
 
-The project is at version **v0.8.0** on `main`. All prior fix/feature branches
-have been merged. No active development branches are in flight.
+The project is at version **v0.7.1** on `main`. All features for **v0.8.0** are
+merged and awaiting the final annotated git tag and GitHub release. No active
+development branches are in flight.
 
 ## Recent Changes (v0.8.0 — 2026-06-12)
 
 ### Type-safe WHERE Helpers (issue #14)
-- **Added**: `query.Eq`, `query.Ne`, `query.Gt`, `query.Gte`, `query.Lt`, `query.Lte`,
-  `query.Like`, `query.In`, `query.IsNull`, `query.IsNotNull` — fluent helpers
+- **Added**: `sqlh.Eq`, `sqlh.Ne`, `sqlh.Gt`, `sqlh.Gte`, `sqlh.Lt`, `sqlh.Lte`,
+  `sqlh.Like`, `sqlh.In`, `sqlh.IsNull`, `sqlh.IsNotNull` — fluent helpers
   for building WHERE conditions without raw SQL strings.
 - **Fixed**: Backward compatibility restored for exported `query.Update` and
   `query.Delete` wrappers. Fixed missing space before `?` in `processWhere`.
@@ -61,8 +62,8 @@ have been merged. No active development branches are in flight.
 
 ### Remaining Short-term items
 
-1. **CHANGELOG catch-up**: All releases now documented in CHANGELOG.md (issue #37)
-2. **Tag v0.8.0**: Create annotated git tag and GitHub release notes
+1. **Tag v0.8.0**: Create annotated git tag and GitHub release notes
+2. **CHANGELOG merged**: v0.6.0–v0.7.1 properly sectioned; Unreleased contains v0.8.0 entries
 
 ### Medium-term (Phase 2)
 
@@ -117,7 +118,7 @@ have been merged. No active development branches are in flight.
 | v0.4.0 | 2025-11-15 | Lock retry, metadata cache, JOIN, flexible SELECT, advanced WHERE |
 | v0.5.0 | 2025-12-01 | `Table[T]` wrapper API |
 | v0.5.1 | 2026-01-15 | Custom table name, CRUD example updates |
-| v0.6.0 | 2026-05-23 | Critical fixes, ArgsApply rename, zero-alloc read path, metadata cache, PostgreSQL CI |
+| v0.6.0 | 2026-05-23 | Critical fixes, ArgsApply rename, zero-alloc read path, metadata cache |
 | v0.6.1 | 2026-05-23 | Patch (no functional changes) |
 | v0.7.0 | 2026-05-23 | PostgreSQL integration tests, PG DDL, placeholder rebinding, CI matrix |
 | v0.7.1 | 2026-06-11 | Native UPSERT, Fields[T](), List API guidance, SQL Server docs |
