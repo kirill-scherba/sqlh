@@ -10,7 +10,7 @@ platform: telegram
 
 Target: ~50K subscribers, mixed Russian + English audience.
 Style: Promotional but technical.
-Character limit: Keep under 400 chars for preview.
+Character limit: In practice, Telegram shows a preview of the first ~300 characters. Ensure the opening line (with 🚀) and at least one feature bullet appear in the preview. The full message can be longer — users will expand it.
 
 ```
 🚀 sqlh — Zero-boilerplate SQL for Go

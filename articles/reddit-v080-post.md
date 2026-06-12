@@ -49,7 +49,7 @@ No `rows.Scan`. No manual SQL. No transaction boilerplate.
 | **Update**     | 226,963  | 177,242  | 65,828   | **84,083** |
 | **Delete**     | 170,503  | 163,185  | 41,375   | **60,503** |
 
-sqlh trades raw speed for correctness: every write is auto-transacted with rollback on error, eliminating an entire class of bugs. For bulk reads, sqlh is within 2-5% of raw sql.
+sqlh trades raw speed for correctness: every write is auto-transacted with rollback on error, eliminating an entire class of bugs. For reads, performance remains in the same order of magnitude as raw sql while removing manual scanning and SQL boilerplate.
 
 ## When to use it
 

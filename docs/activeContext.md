@@ -2,9 +2,9 @@
 
 ## Current State
 
-The project is at version **v0.8.0** on `main`. The v0.8.0 release has been
-tagged with annotated git tag and GitHub release notes. No active development
-branches are in flight.
+The project is at version **v0.8.0** on `main`. The `v0.8.0` annotated tag has been
+created. GitHub release notes are pending and will be published after this PR
+is merged. No active development branches are in flight.
 
 ## Recent Changes (v0.8.0 — 2026-06-12)
 
