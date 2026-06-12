@@ -59,11 +59,11 @@ is merged. No active development branches are in flight.
 5. ✅ Native UPSERT — Stage 5 (v0.7.1)
 6. ✅ Type-safe WHERE helpers — Stage 6 (v0.8.0)
 7. ✅ Benchmarks, comparisons, animated GIF — Stage 6 (v0.8.0)
-8. ✅ **v0.8.0 release** — Tagged and published (2026-06-12)
+8. ✅ **v0.8.0 tag** — Annotated tag created (2026-06-12); GitHub Release notes pending
 
 ### Remaining Short-term items
 
-1. *(none — v0.8.0 is the current stable release)*
+1. **Publish v0.8.0 GitHub Release notes** — after this PR is merged.
 
 ### Medium-term (Phase 2)
 
@@ -91,7 +91,7 @@ is merged. No active development branches are in flight.
 
 ## Next Milestones
 
-1. **Short-term**: Tag v0.8.0 and publish GitHub release notes
+1. **Short-term**: Publish v0.8.0 GitHub Release notes and community announcement posts.
 2. **Medium-term**: Aggregate functions, schema migrations, batch operations
 3. **v1.0.0**: Stable API with full database compatibility
 
