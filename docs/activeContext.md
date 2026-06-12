@@ -22,6 +22,15 @@ is merged. No active development branches are in flight.
 - **Benchmarks**: 24 benchmark functions in `bench/` vs raw sql, sqlx, GORM. (#28)
 - **Table[T] examples**: `Example_` functions in `sqlh_example_test.go` for pkg.go.dev. (#29)
 
+### Schema Migrations (issue #47, PR #48)
+- **Added**: `sqlh/migrate` sub-package — `FromStruct[T]`, `Diff[T]`, `Raw`, `Apply`,
+  `DryRun`, `AutoAdd()`, `Backup` hook.
+- **Architecture**: `querier` interface unifying `*sql.DB` and `*sql.Tx` for safe
+  introspection inside transactions. `Version` as integer (ascending order).
+- **Safety**: `AutoAdd()` generates only `ADD COLUMN`; destructive changes require
+  explicit `migrate.Raw()`. Full transaction wrapping with rollback on failure.
+- **Testing**: 18 integration tests, all passing. Zero new dependencies.
+
 ## Prior Releases
 
 ### v0.7.1 — 2026-06-11
@@ -59,7 +68,8 @@ is merged. No active development branches are in flight.
 5. ✅ Native UPSERT — Stage 5 (v0.7.1)
 6. ✅ Type-safe WHERE helpers — Stage 6 (v0.8.0)
 7. ✅ Benchmarks, comparisons, animated GIF — Stage 6 (v0.8.0)
-8. ✅ **v0.8.0 tag** — Annotated tag created (2026-06-12); GitHub Release notes pending
+8. ✅ Schema migrations (experimental) — Stage 7
+9. ✅ v0.8.0 tag — Annotated tag created (2026-06-12); GitHub Release notes pending
 
 ### Remaining Short-term items
 
@@ -68,8 +78,7 @@ is merged. No active development branches are in flight.
 ### Medium-term (Phase 2)
 
 1. **Aggregate functions**: GROUP BY, HAVING, SUM, AVG, MIN, MAX
-2. **Schema migrations**: ALTER TABLE support
-3. **Batch operations**: Multi-row insert/update in a single query
+2. **Batch operations**: Multi-row insert/update in a single query
 
 ## Known Issues
 

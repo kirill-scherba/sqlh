@@ -100,7 +100,34 @@ func SetNumRows(n int)
 func GetNumRows() int
 ```
 
-### Key Types
+### migrate Package (Public Functions)
+
+```go
+// Core types
+func V(v int) Version
+
+// Migration steps
+func FromStruct[T any](tableName string, v Version) Migration
+func Diff[T any](tableName string, v Version, opts ...DiffOption) Migration
+func Raw(name string, v Version, sql string) Migration
+func AutoAdd() DiffOption
+
+// Runner
+func Apply(db *sql.DB, plan Plan, opts Options) error
+
+// Options
+func DetectDialect(db *sql.DB) Dialect
+
+// Types
+type Version int
+type Dialect string
+type Migration interface { ... }
+type Plan []Migration
+type Options struct {
+    DryRun bool
+    Backup func(*sql.DB) error
+}
+```
 
 ```go
 // Where clause: field name with operator + value
@@ -195,9 +222,8 @@ SQLH_MYSQL_TEST=1 go test -run TestMySQL ./...
 
 1. `context.Context` support is partially implemented (available in read paths
    via variadic attributes, not fully propagated to write operations)
-2. No native `UPSERT` (uses `Set` with SELECT-then-INSERT/UPDATE pattern)
-3. No aggregate functions (GROUP BY, HAVING, SUM, AVG)
-4. No schema migration support (ALTER TABLE)
-5. No raw SQL fragment injection for edge cases
-6. MySQL integration test requires Docker and is gated behind
+2. No aggregate functions (GROUP BY, HAVING, SUM, AVG)
+3. Schema migrations are **experimental** via `sqlh/migrate` sub-package
+4. No raw SQL fragment injection for edge cases
+5. MySQL integration test requires Docker and is gated behind
    `SQLH_MYSQL_TEST=1`.
