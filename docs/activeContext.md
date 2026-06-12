@@ -63,7 +63,6 @@ development branches are in flight.
 ### Remaining Short-term items
 
 1. **Tag v0.8.0**: Create annotated git tag and GitHub release notes
-2. **CHANGELOG merged**: v0.6.0–v0.7.1 properly sectioned; Unreleased contains v0.8.0 entries
 
 ### Medium-term (Phase 2)
 

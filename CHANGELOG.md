@@ -25,6 +25,8 @@ It's intended to be a human-readable history of changes.
 - **README benchmark tables**: Corrected units (ops/sec, allocs/op), values, and formatting for accuracy. (#28)
 - **Comparison UPDATE semantics**: Made the `UPDATE` operation in `examples/comparison/` semantically equivalent across all three approaches for fair benchmarking. (#26)
 
+## [v0.7.1] - 2026-06-11
+
 ### Added
 
 - **Native database UPSERT for `Set`**: PostgreSQL (`ON CONFLICT ... DO UPDATE`), SQLite (`ON CONFLICT ... DO UPDATE`), MySQL (`ON DUPLICATE KEY UPDATE`). Falls back to the legacy SELECT-then-INSERT/UPDATE path for unsupported or unknown drivers. Includes `extractColumn` helper and comprehensive tests for all three dialects. (#13)
