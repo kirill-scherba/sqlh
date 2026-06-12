@@ -363,49 +363,151 @@ func TestSQLOperations(t *testing.T) {
 	})
 }
 
-func TestInsertId(t *testing.T) {
+func TestHelperFunctions(t *testing.T) {
+	t.Run("SetWheresJoinAnd", func(t *testing.T) {
+		join := SetWheresJoinAnd()
+		require.False(t, bool(join))
+	})
 
-	// Open in-memory SQLite database for testing
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
-	require.NoError(t, err, "failed to open database")
-	defer db.Close()
+	t.Run("SetDistinct", func(t *testing.T) {
+		d := SetDistinct()
+		require.True(t, bool(d))
+	})
 
-	// Create table
-	createStmt, err := query.Table[TestTable]()
-	require.NoError(t, err)
-	_, err = db.Exec(createStmt)
-	require.NoError(t, err, "failed to create table")
+	t.Run("SetName", func(t *testing.T) {
+		n := SetName("custom_name")
+		require.NotNil(t, n)
+		require.Equal(t, "custom_name", *(*string)(n))
+	})
 
-	// Create table 2
-	createStmt, err = query.Table[TestTable2]()
-	require.NoError(t, err)
-	_, err = db.Exec(createStmt)
-	require.NoError(t, err, "failed to create table")
+	t.Run("SetNumRows and GetNumRows", func(t *testing.T) {
+		old := GetNumRows()
+		defer SetNumRows(old)
 
-	t.Run("Insert and Get Autoincrement ID", func(t *testing.T) {
+		SetNumRows(25)
+		require.Equal(t, 25, GetNumRows())
+	})
 
-		// Insert 1
-		user1 := TestTable{Name: "Alice", Data: []byte("data1")} // ID is 0
-		id, err := InsertId(db, user1)
+	t.Run("InsertWithCallback error path", func(t *testing.T) {
+		db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
 		require.NoError(t, err)
-		assert.Equal(t, int64(1), id)
+		defer db.Close()
 
-		// Retrieve to verify
-		retrievedUser, err := Get[TestTable](db, Where{"name=", "Alice"})
+		createStmt, err := query.Table[TestTable]()
 		require.NoError(t, err)
-		require.NotNil(t, retrievedUser)
-
-		// Check if autoincrement ID was assigned
-		assert.Equal(t, int64(1), retrievedUser.ID)
-		assert.Equal(t, "Alice", retrievedUser.Name)
-		assert.Equal(t, []byte("data1"), retrievedUser.Data)
-
-		// Insert 2
-		user2 := TestTable{Name: "Bob", Data: []byte("data2")} // ID is 0
-		id, err = InsertId(db, user2)
+		_, err = db.Exec(createStmt)
 		require.NoError(t, err)
-		assert.Equal(t, int64(2), id)
 
+		// Callback that returns an error to trigger rollback
+		callbackErr := fmt.Errorf("callback error")
+		err = InsertWithCallback(db,
+			func(db *sql.DB, tx *sql.Tx) error {
+				return callbackErr
+			},
+			TestTable{Name: "Callback", Data: []byte("cb")},
+		)
+		require.ErrorIs(t, err, callbackErr)
+
+		// Verify row was NOT inserted (rolled back)
+		_, err = Get[TestTable](db, Where{"name=", "Callback"})
+		require.ErrorIs(t, err, sql.ErrNoRows)
+	})
+
+	t.Run("Table wrapper InsertId", func(t *testing.T) {
+		db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+		require.NoError(t, err)
+		defer db.Close()
+
+		createStmt, err := query.Table[TestTable]()
+		require.NoError(t, err)
+		_, err = db.Exec(createStmt)
+		require.NoError(t, err)
+
+		table, err := CreateTable[TestTable](db)
+		require.NoError(t, err)
+		id, err := table.InsertId(TestTable{Name: "Wrap", Data: []byte("w")})
+		require.NoError(t, err)
+		require.Equal(t, int64(1), id)
+	})
+
+	t.Run("Table wrapper Close is no-op", func(t *testing.T) {
+		db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+		require.NoError(t, err)
+		defer db.Close()
+
+		table, err := CreateTable[TestTable](db)
+		require.NoError(t, err)
+		// Close should not panic or error
+		require.NotPanics(t, func() {
+			table.Close()
+		})
+		// db should still be usable
+		err = db.Ping()
+		require.NoError(t, err)
+	})
+}
+
+func TestGetLastInsertID(t *testing.T) {
+	t.Run("SQLite getLastInsertID", func(t *testing.T) {
+		db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+		require.NoError(t, err)
+		defer db.Close()
+
+		createStmt, err := query.Table[TestTable]()
+		require.NoError(t, err)
+		_, err = db.Exec(createStmt)
+		require.NoError(t, err)
+
+		tx, err := db.Begin()
+		require.NoError(t, err)
+		defer tx.Rollback()
+
+		_, err = tx.Exec("INSERT INTO TestTable (name, data) VALUES ('Alice', 'd1')")
+		require.NoError(t, err)
+
+		id, err := getLastInsertID(db, tx, "TestTable")
+		require.NoError(t, err)
+		require.Equal(t, int64(1), id)
+	})
+
+	t.Run("detectDialect does not panic with real driver", func(t *testing.T) {
+		// This subtest documents that detectDialect handles a real SQLite
+		// driver without panic. It does not cover an unsupported driver because
+		// we cannot easily register a fake driver in a test.
+		db, err := sql.Open("sqlite3", ":memory:")
+		require.NoError(t, err)
+		defer db.Close()
+		require.NotPanics(t, func() {
+			_ = detectDialect(db)
+		})
+	})
+}
+
+func TestDetectDialect(t *testing.T) {
+	t.Run("SQLite dialect detection", func(t *testing.T) {
+		db, err := sql.Open("sqlite3", ":memory:")
+		require.NoError(t, err)
+		defer db.Close()
+		require.Equal(t, dialectSQLite, detectDialect(db))
+	})
+
+	t.Run("dialectFromQuerier with *sql.Tx fallback", func(t *testing.T) {
+		db, err := sql.Open("sqlite3", ":memory:")
+		require.NoError(t, err)
+		defer db.Close()
+
+		tx, err := db.Begin()
+		require.NoError(t, err)
+		defer tx.Rollback()
+
+		// *sql.Tx falls back to dialectSQLite
+		require.Equal(t, dialectSQLite, dialectFromQuerier(tx))
+	})
+
+	t.Run("rebind passthrough for non-PostgreSQL", func(t *testing.T) {
+		sql := "SELECT * FROM t WHERE id = ?"
+		require.Equal(t, sql, rebind(sql, dialectSQLite))
+		require.Equal(t, sql, rebind(sql, dialectMySQL))
 	})
 }
 
