@@ -6,6 +6,9 @@
 
 ```txt
 ┌─────────────────────────────────────────────────────┐
+│                   migrate package                      │
+│  (Schema migrations: FromStruct, Diff, Raw, Apply)    │
+├─────────────────────────────────────────────────────┤
 │                   sqlh package                       │
 │  (High-level CRUD: Insert, Get, List, Update,       │
 │   Delete, Set, Create, with auto-transactions)      │
@@ -31,6 +34,14 @@ sqlh/
 ├── sqlh_update_test.go     # Batch Update regression test
 ├── sqlh_benchmark_test.go  # Performance benchmarks
 ├── table_test.go           # Table type tests
+├── migrate/
+│   ├── migrate.go           # Core types: Version, Migration, Plan, Options
+│   ├── introspection.go     # Schema introspection (PRAGMA, SHOW COLUMNS, info_schema)
+│   ├── fromstruct.go        # FromStruct[T]: CREATE TABLE IF NOT EXISTS
+│   ├── diff.go              # Diff[T]: ALTER TABLE ADD COLUMN via struct comparison
+│   ├── raw.go               # Raw: explicit SQL migration steps
+│   ├── apply.go             # Apply: migration runner, _migrations, DryRun, Backup
+│   └── migrate_test.go      # Integration tests (SQLite)
 ├── query/
 │   ├── sqlh_query.go       # SQL query generation (Select, Insert, Update, Delete, Table)
 │   ├── sqlh_meta_cache.go  # Cached reflection metadata
@@ -208,6 +219,38 @@ User calls: sqlh.Get[User](db, Where{Field: "id=", Value: 1})
 5. Return &user (pointer) or sql.ErrNoRows / ErrMultipleRowsFound
 ```
 
+### 11. Schema Migration Pattern (Go 1.25+)
+
+The `migrate` package adds a third layer for schema evolution, keeping the two-package architecture intact while providing additive-only migrations.
+
+```go
+var plan = migrate.Plan{
+    migrate.FromStruct[MemoryV1]("memory", migrate.V(1)),   // CREATE TABLE IF NOT EXISTS
+    migrate.Diff[MemoryV2]("memory", migrate.V(2), migrate.AutoAdd()), // ALTER TABLE ADD COLUMN
+    migrate.Raw("add_index", migrate.V(3), `CREATE INDEX IF NOT EXISTS idx_key ON memory(key)`),
+}
+
+err := migrate.Apply(db, plan, migrate.Options{DryRun: false})
+```
+
+**Key patterns:**
+
+- **Integer versioning** — `Version int`, applied in ascending order, tracked in `_migrations` table
+- **querier interface** — unifies `*sql.DB` and `*sql.Tx` so `Diff` introspection works inside the Apply transaction
+- **Safety by default** — `AutoAdd()` only generates `ADD COLUMN`; destructive changes require `migrate.Raw()`
+- **DryRun mode** — prints SQL without executing; Diff migrations show a placeholder since they need live schema
+- **Transaction wrapping** — entire Apply run is a single DB transaction; rollback on any error
+- **Zero new dependencies** — reuses existing `query` package for DDL generation
+
+**Data flow for Diff:**
+
+```txt
+1. structColumns(T, dialect)  →  extract {Name, Type, NotNull} from struct tags
+2. TableColumns(db, table, dialect)  →  introspect live schema
+3. set difference: structCols - liveCols  →  missing columns
+4. generate ALTER TABLE ADD COLUMN for each missing column
+```
+
 ## Design Decisions
 
 | Decision | Rationale |
@@ -226,6 +269,6 @@ User calls: sqlh.Get[User](db, Where{Field: "id=", Value: 1})
 - Native UPSERT (ON CONFLICT DO UPDATE)
 - JOIN support ergonomics for composite structs
 - Aggregate functions (GROUP BY, HAVING, SUM, AVG)
-- Schema migrations (ALTER TABLE, CREATE INDEX)
+- Schema migrations (ALTER TABLE, CREATE INDEX) ✅ Experimental via `migrate` package
 - Raw SQL fragment injection
 - Transactional reads (pass *sql.Tx to Get/List)
