@@ -17,7 +17,7 @@
   `(index, row)` — ✅ functional
 - **Update**: `Update[T]()` updates rows matching WHERE conditions — ✅ functional
 - **Delete**: `Delete[T]()` deletes rows matching WHERE conditions — ✅ functional
-- **Set**: `Set[T]()` upserts (SELECT-then-INSERT/UPDATE) — ✅ functional
+- **Set**: `Set[T]()` native database upsert — ✅ functional
 - **Pagination**: `ListRows` and `ListRange` use explicit offset/limit
   arguments — ✅ functional
 
@@ -140,7 +140,10 @@
 
 | Milestone | Date | Details |
 |-----------|------|---------|
-| Animated GIF demo | 2026-06-11 | Added `docs/demo.gif` showing zero-boilerplate CRUD; new `examples/demo/` with `main.go` + `demo.tape`. Closes #25. |
+| v0.6.0 release | 2026-05-23 | Critical bug fixes (isAutoIncrement, PostgreSQL getLastInsertID, lock-retry, Update leak), ArgsAppay → ArgsApply rename, zero-alloc read path, metadata cache, docs alignment. |
+| v0.7.0 release | 2026-05-23 | PostgreSQL integration tests, PG DDL generation, `?` → `$N` rebinding, CI matrix with MySQL/PostgreSQL service containers, `cachedDialect` concurrency fix. |
+| v0.7.1 release | 2026-06-11 | Native UPSERT for Set, `Fields[T]()`, `db_table_name` ergonomics, List API guidance, SQL Server docs, Table.Close docs fix. |
+| v0.8.0 prepared | 2026-06-12 | Type-safe WHERE helpers (`sqlh.Eq`, `sqlh.Ne`, `sqlh.Gt`, `sqlh.Gte`, `sqlh.Lt`, `sqlh.Lte`, `sqlh.Like`, `sqlh.In`, `sqlh.IsNull`, `sqlh.IsNotNull`), code comparison examples, performance benchmarks, animated GIF demo, pkg.go.dev badge, backward-compat fix for query.Update/Delete. |
 
 ## Known Issues
 
@@ -152,12 +155,12 @@
 | PostgreSQL `last_insert_rowid` fixed via `pg_get_serial_sequence` | Medium | ✅ Fixed |
 | Lock-retry uses substring match (less fragile, but still not `errors.Is`) | Low | ✅ Mitigated |
 | `isAutoIncrement` now detects MySQL `AUTO_INCREMENT` | Medium | ✅ Fixed |
-| No native UPSERT (Set uses SELECT-then-INSERT/UPDATE) | Medium | Planned |
+| No native UPSERT (Set uses SELECT-then-INSERT/UPDATE) | Medium | ✅ Fixed in v0.7.1 |
 
 ## Feature Completeness
 
-| Feature | Status | Version / Branch |
-|---------|--------|-------------------|
+| Feature | Status | Version |
+|---------|--------|---------|
 | Basic CRUD (Insert, Get, List, Update, Delete) | ✅ Complete | v0.1.0 |
 | Set (upsert) | ✅ Complete | v0.1.0 |
 | Transaction auto-wrap | ✅ Complete | v0.1.0 |
@@ -176,29 +179,29 @@
 | ListRows explicit pagination | ✅ Complete | v0.2.2 |
 | `Table[T]` wrapper API | ✅ Complete | v0.5.0 |
 | Custom table name (tag + interface) | ✅ Complete | v0.5.1 |
-| Metadata cache | ✅ Complete | feature/metadata_cache |
+| Metadata cache | ✅ Complete | v0.6.0 |
 | Advanced WHERE (OR, IN, LIKE, IS NULL) | ✅ Complete | v0.2.2+ |
 | Context propagation (read paths) | ✅ Complete | v0.2.2+ |
-| JOIN support with composite structs | ✅ Complete | feature/metadata_cache |
+| JOIN support with composite structs | ✅ Complete | v0.6.0 |
 | Flexible SELECT (DISTINCT, Alias, custom Name) | ✅ Complete | v0.2.2+ |
-| MySQL `AUTO_INCREMENT` detection | ✅ Fixed | Stage 1 |
-| PostgreSQL `getLastInsertID` | ✅ Fixed | Stage 1 |
-| `isLockError` robust detection | ✅ Fixed | Stage 1 |
-| Update statement handle leak | ✅ Fixed | Stage 1 |
-| `ArgsAppay` → `ArgsApply` rename | ✅ Complete | Stage 2 |
-| Zero-alloc read path | ✅ Complete | Stage 3 |
-| Native UPSERT (ON CONFLICT DO UPDATE) | ❌ Not started | — |
+| MySQL `AUTO_INCREMENT` detection | ✅ Fixed | v0.6.0 |
+| PostgreSQL `getLastInsertID` | ✅ Fixed | v0.6.0 |
+| `isLockError` robust detection | ✅ Fixed | v0.6.0 |
+| Update statement handle leak | ✅ Fixed | v0.6.0 |
+| `ArgsAppay` → `ArgsApply` rename | ✅ Complete | v0.6.0 |
+| Zero-alloc read path | ✅ Complete | v0.6.0 |
+| Native UPSERT (ON CONFLICT DO UPDATE) | ✅ Complete | v0.7.1 |
+| Type-safe WHERE helpers (Eq, Ne, Gt, etc.) | ✅ Complete | v0.8.0 |
 | Aggregate functions | ❌ Not started | — |
 | Schema migrations | ❌ Not started | — |
 | Batch operations | ❌ Not started | — |
 | Raw SQL fragments | ❌ Not started | — |
 | Transactional reads | ❌ Not started | — |
 
-## Performance Baseline (2026-05-22)
+## Performance Baseline (2026-06-12)
 
-Benchmarks from the `perf/args-allocs` branch after Stage 3 optimisations.
-The addressable fast path (via pointer) is the production code path used
-inside `QueryRange`.
+Benchmarks from the `bench/` module (v0.8.0). The addressable fast path (via
+pointer) is the production code path used inside `QueryRange`.
 
 | Benchmark | ns/op | B/op | allocs/op |
 |-----------|-------|------|-----------|
@@ -221,16 +224,17 @@ inside `QueryRange`.
   wrapper tests pass, metadata cache tests pass, retry logic tests pass
 - **MySQL Tests**: ✅ Gated behind `SQLH_MYSQL_TEST=1`; runs against local Docker
   container with readiness wait
+- **PostgreSQL Tests**: ✅ Gated behind `SQLH_TEST_POSTGRES=1`; full CRUD suite
 - **Documentation**: CHANGELOG.md, README.md, ROADMAP.md, SKILL.md, all 7
   Memory Bank files present
-- **Examples**: 7 runnable programs in `examples/` directory (basic, join,
-  paginator, set, iterators, context, crud) plus `ExampleListRows` and
+- **Examples**: 8 runnable programs in `examples/` directory (basic, join,
+  paginator, set, iterators, context, crud, comparison) plus `ExampleListRows` and
   `ExampleListRange` in `sqlh_example_test.go` for pkg.go.dev
 - **Backward Compatibility**: Public API changes limited; `ArgsAppay` deprecated
   for removal in v1.0.0; all else backward-compatible
 
 ## Next Milestones
 
-1. **Merge `feature/2-public-promotion`** into `main`
-2. **Tag v0.6.0**: PostgreSQL support, CI matrix, docs alignment
-3. **v1.0.0**: Stable API with schema management and full database compatibility
+1. **v1.0.0**: Stable API with schema management and full database compatibility
+2. **Aggregate functions**: GROUP BY, HAVING, SUM, AVG, MIN, MAX
+3. **Batch operations**: Multi-row insert/update in a single query
