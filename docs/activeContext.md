@@ -2,9 +2,9 @@
 
 ## Current State
 
-The project is at version **v0.7.1** on `main`. All features for **v0.8.0** are
-merged and awaiting the final annotated git tag and GitHub release. No active
-development branches are in flight.
+The project is at version **v0.8.0** on `main`. The v0.8.0 release has been
+tagged with annotated git tag and GitHub release notes. No active development
+branches are in flight.
 
 ## Recent Changes (v0.8.0 — 2026-06-12)
 
@@ -59,10 +59,11 @@ development branches are in flight.
 5. ✅ Native UPSERT — Stage 5 (v0.7.1)
 6. ✅ Type-safe WHERE helpers — Stage 6 (v0.8.0)
 7. ✅ Benchmarks, comparisons, animated GIF — Stage 6 (v0.8.0)
+8. ✅ **v0.8.0 release** — Tagged and published (2026-06-12)
 
 ### Remaining Short-term items
 
-1. **Tag v0.8.0**: Create annotated git tag and GitHub release notes
+1. *(none — v0.8.0 is the current stable release)*
 
 ### Medium-term (Phase 2)
 
