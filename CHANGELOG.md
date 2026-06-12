@@ -7,6 +7,8 @@ It's intended to be a human-readable history of changes.
 
 ## [Unreleased]
 
+## [v0.8.0] - 2026-06-12
+
 ### Added
 
 - **Type-safe WHERE helper API**: `sqlh.Eq`, `sqlh.Ne`, `sqlh.Gt`, `sqlh.Gte`, `sqlh.Lt`, `sqlh.Lte`, `sqlh.Like`, `sqlh.In`, `sqlh.IsNull`, `sqlh.IsNotNull` — fluent, chainable helpers for building WHERE conditions without raw SQL strings. (#14)
@@ -173,7 +175,8 @@ Patch release — no functional changes.
 
 - Corrected the return signature and logic of `Get` to consistently return `*T` or `nil` on error/not found.
 
-[Unreleased]: https://github.com/kirill-scherba/sqlh/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/kirill-scherba/sqlh/compare/v0.8.0...HEAD
+[v0.8.0]: https://github.com/kirill-scherba/sqlh/compare/v0.7.1...v0.8.0
 [v0.7.1]: https://github.com/kirill-scherba/sqlh/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/kirill-scherba/sqlh/compare/v0.6.1...v0.7.0
 [v0.6.1]: https://github.com/kirill-scherba/sqlh/compare/v0.6.0...v0.6.1
