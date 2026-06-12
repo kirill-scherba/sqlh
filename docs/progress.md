@@ -143,7 +143,7 @@
 | v0.6.0 release | 2026-05-23 | Critical bug fixes (isAutoIncrement, PostgreSQL getLastInsertID, lock-retry, Update leak), ArgsAppay → ArgsApply rename, zero-alloc read path, metadata cache, docs alignment. |
 | v0.7.0 release | 2026-05-23 | PostgreSQL integration tests, PG DDL generation, `?` → `$N` rebinding, CI matrix with MySQL/PostgreSQL service containers, `cachedDialect` concurrency fix. |
 | v0.7.1 release | 2026-06-11 | Native UPSERT for Set, `Fields[T]()`, `db_table_name` ergonomics, List API guidance, SQL Server docs, Table.Close docs fix. |
-| v0.8.0 prepared | 2026-06-12 | Type-safe WHERE helpers (`sqlh.Eq`, `sqlh.Ne`, `sqlh.Gt`, `sqlh.Gte`, `sqlh.Lt`, `sqlh.Lte`, `sqlh.Like`, `sqlh.In`, `sqlh.IsNull`, `sqlh.IsNotNull`), code comparison examples, performance benchmarks, animated GIF demo, pkg.go.dev badge, backward-compat fix for query.Update/Delete. |
+| v0.8.0 release | 2026-06-12 | Type-safe WHERE helpers, benchmarks, comparisons, animated GIF demo, pkg.go.dev badge. Annotated tag created; release notes pending. |
 
 ## Known Issues
 
