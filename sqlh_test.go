@@ -470,10 +470,10 @@ func TestGetLastInsertID(t *testing.T) {
 		require.Equal(t, int64(1), id)
 	})
 
-	t.Run("Unsupported driver", func(t *testing.T) {
-		// detectDialect with nil db panics (reflect.TypeOf(nil).String() is invalid).
-		// That's acceptable since callers should never pass nil.
-		// We just document this behavior with a NotPanics test on a real db.
+	t.Run("detectDialect does not panic with real driver", func(t *testing.T) {
+		// This subtest documents that detectDialect handles a real SQLite
+		// driver without panic. It does not cover an unsupported driver because
+		// we cannot easily register a fake driver in a test.
 		db, err := sql.Open("sqlite3", ":memory:")
 		require.NoError(t, err)
 		defer db.Close()

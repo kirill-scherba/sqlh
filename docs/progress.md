@@ -233,12 +233,14 @@ pointer) is the production code path used inside `QueryRange`.
 - **Backward Compatibility**: Public API changes limited; `ArgsAppay` deprecated
   for removal in v1.0.0; all else backward-compatible
 - **Awesome-Go Submission**: PR #6401 submitted to avelino/awesome-go (SQL Query
-  Builders section), README badge added — awaiting review.
+  Builders section) — awaiting review. README badge deferred until upstream
+  acceptance.
 
 ## Next Milestones
 
 1. **v1.0.0**: Stable API with schema management and full database compatibility
 2. **Aggregate functions**: GROUP BY, HAVING, SUM, AVG, MIN, MAX
 3. **Batch operations**: Multi-row insert/update in a single query
-4. **Coverage to 80%+**: Add tests for `getLastInsertID` (MySQL/PG branches), `Close`,
-   and `detectDialect` (non-SQLite paths).
+4. **Coverage to 80%+**: Add tests for `getLastInsertID` (MySQL/PG branches), and
+   `detectDialect` (non-SQLite paths). `Close` is an empty no-op by design —
+   no testable statements inside.
