@@ -31,8 +31,15 @@ Eliminate repetitive SQL query writing for Go developers by automatically genera
 
 ## Current Version
 
-v0.5.1 plus active `feature/metadata_cache` branch work
+v0.8.0 (2026-06-12) — type-safe WHERE helpers, benchmarks, animated GIF demo, pkg.go.dev badge, and awesome-go submission.
 
 ## License
 
 BSD-style license
+
+## Distribution
+
+- **GitHub**: https://github.com/kirill-scherba/sqlh
+- **pkg.go.dev**: https://pkg.go.dev/github.com/kirill-scherba/sqlh
+- **Go Report Card**: https://goreportcard.com/report/github.com/kirill-scherba/sqlh
+- **awesome-go**: Submitted to avelino/awesome-go PR #6401 (SQL Query Builders).

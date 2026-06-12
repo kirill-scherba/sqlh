@@ -3,6 +3,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/kirill-scherba/sqlh)](https://goreportcard.com/report/github.com/kirill-scherba/sqlh)
 [![Go Reference](https://pkg.go.dev/badge/github.com/kirill-scherba/sqlh.svg)](https://pkg.go.dev/github.com/kirill-scherba/sqlh)
 [![Test](https://github.com/kirill-scherba/sqlh/actions/workflows/test.yml/badge.svg)](https://github.com/kirill-scherba/sqlh/actions/workflows/test.yml)
+[![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
 
 `sqlh` is a lightweight helper package for Go that simplifies interactions with SQL databases. It leverages **Go generics (Go 1.25+)** to provide type-safe CRUD functions (`Insert`, `Get`, `List`, `Update`, `Delete`, `Set`) that work directly with your Go structs, automatically generating SQL queries from struct definitions using struct tags — reducing boilerplate code by 60-80%.
 
