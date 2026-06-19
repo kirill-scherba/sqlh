@@ -21,9 +21,34 @@ description: SQL Helper — Go library for auto-generating SQL queries from stru
 - Use `List[T]` for normal list pages with the package default row count.
 - Use `ListRows[T]` when the page size must be explicit.
 - Use `ListRange[T]` for streaming/lazy iteration and large result sets.
+- Use `Count[T]` for counting rows matching conditions.
 - Use `QueryRange[T]` only when a custom `SELECT` string is already needed.
 - Use `Table[T]` when several operations target the same table in one component.
-- Use `Set` only for SELECT-then-INSERT/UPDATE upsert semantics. For database-native UPSERT, write explicit SQL until sqlh adds native support.
+- Use `Set` for database-native UPSERT (PostgreSQL/SQLite/MySQL) with automatic fallback to SELECT-then-INSERT/UPDATE for unsupported drivers.
+
+## Lightweight Projections (projecting a subset of columns)
+
+When you only need a few columns (e.g. just `key` or `key`+`text`+`embedding`),
+define a lightweight struct with only the required fields:
+
+```go
+// Project only the columns needed, avoiding BLOBs or large fields.
+type kvDataKey struct {
+    _   bool   `db_table_name:"kv_data"`
+    Key string `db:"key"`
+}
+
+for _, row := range sqlh.ListRange[kvDataKey](db, 0, "", "key ASC", 0,
+    sqlh.Like("key", prefix+"%"),
+    func(err error) { log.Print(err) },
+    context.Background(),
+) {
+    fmt.Println(row.Key)
+}
+```
+
+sqlh will generate `SELECT key FROM kv_data ...` — only the tagged columns,
+no unnecessary BLOBs or large text fields.
 
 ## Core Functions
 
@@ -47,6 +72,29 @@ user, err := sqlh.Get[User](db, sqlh.Eq("id", 1))
 ```go
 users, nextOffset, err := sqlh.List[User](db, 0, "", "name ASC", where...)
 users, nextOffset, err := sqlh.ListRows[User](db, 20, "", "name ASC", 10, where...)
+```
+
+### Count (aggregate)
+```go
+// Returns the number of rows matching the where conditions.
+count, err := sqlh.Count[User](db, sqlh.Eq("active", true))
+count, err := sqlh.Count[User](db, sqlh.Like("name", "%Alice%"))
+```
+
+### QueryRange (custom SELECT)
+```go
+// Only when a custom SELECT string is needed. Args go after ctx.
+type countRow struct {
+    Count int `db:"count"`
+}
+for row := range sqlh.QueryRange[countRow](db,
+    "SELECT COUNT(*) AS count FROM users WHERE name LIKE ?",
+    func(err error) { log.Fatal(err) },
+    context.Background(),
+    "%Alice%",
+) {
+    fmt.Println(row.Count)
+}
 ```
 
 ### ListRange (lazy iterator — no rows.Scan!)
